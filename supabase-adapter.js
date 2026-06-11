@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-balance-v12";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-daily-capital-v13";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -673,6 +673,30 @@
     const db = await ensureReady();
     const result = { capital: null, profit: null, capitalDate: null, profitDate: null };
 
+    const readDailyCapital = async useDateFilter => {
+      let query = db
+        .from("daily_summaries")
+        .select("summary_date,capital_balance")
+        .order("summary_date", { ascending: false })
+        .limit(1);
+      if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
+      const { data, error } = await query;
+      if (error) throw error;
+      const row = (data || [])[0];
+      if (!row) return;
+      result.capital = Number(row.capital_balance || 0);
+      result.capitalDate = row.summary_date;
+    };
+
+    try {
+      await readDailyCapital(true);
+      if (result.capital === null) await readDailyCapital(false);
+    } catch (err) {
+      if (!String(err.message || "").includes("daily_summaries")) {
+        console.warn("daily capital lookup failed", err);
+      }
+    }
+
     const readLedgerType = async (ledgerType, useDateFilter) => {
       let query = db
         .from("money_ledger")
@@ -696,7 +720,7 @@
     };
 
     try {
-      await Promise.all([readLedgerType("capital", true), readLedgerType("profit", true)]);
+      await readLedgerType("profit", true);
       if (result.capital === null) await readLedgerType("capital", false);
       if (result.profit === null) await readLedgerType("profit", false);
     } catch (err) {
