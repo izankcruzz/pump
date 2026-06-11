@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-fuel-log-v7";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-today-history-v8";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -742,7 +742,14 @@
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : "sales";
     const dateCol = table === "expenses" ? "spent_at" : table === "purchases" ? "purchased_at" : table === "debts" ? "debt_at" : "sold_at";
-    const { data, error } = await db.from(table).select("*").order(dateCol, { ascending: false }).limit(50);
+    const today = bkkDate();
+    const { data, error } = await db
+      .from(table)
+      .select("*")
+      .gte(dateCol, `${today}T00:00:00+07:00`)
+      .lte(dateCol, `${today}T23:59:59+07:00`)
+      .order(dateCol, { ascending: false })
+      .limit(100);
     if (error) throw error;
     return (data || []).map(row => {
       if (table === "expenses") return { rowIndex: row.id, data: [thaiDate(row.spent_at), row.title, row.amount, row.amount, row.note || ""] };
