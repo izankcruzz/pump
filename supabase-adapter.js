@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-fuel-log-v6";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-fuel-log-v7";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -272,26 +272,31 @@
 
     async function latestFuelLog(product) {
       if (!product) return null;
-      let query = db
-        .from("fuel_logs")
-        .select("product_id,product_name,meter_start,meter_end,logged_at")
-        .order("logged_at", { ascending: false })
-        .limit(1);
+      async function readLatest(table, dateColumn) {
+        let query = db
+          .from(table)
+          .select(`product_id,product_name,meter_start,meter_end,${dateColumn}`)
+          .order(dateColumn, { ascending: false })
+          .limit(1);
 
-      if (product.id) {
-        const byId = await query.eq("product_id", product.id);
-        if (byId.error) throw byId.error;
-        if ((byId.data || [])[0]) return byId.data[0];
+        if (product.id) {
+          const byId = await query.eq("product_id", product.id);
+          if (byId.error) throw byId.error;
+          if ((byId.data || [])[0]) return byId.data[0];
+        }
+
+        const byName = await db
+          .from(table)
+          .select(`product_id,product_name,meter_start,meter_end,${dateColumn}`)
+          .eq("product_name", product.name)
+          .order(dateColumn, { ascending: false })
+          .limit(1);
+        if (byName.error) throw byName.error;
+        return (byName.data || [])[0] || null;
       }
 
-      const byName = await db
-        .from("fuel_logs")
-        .select("product_id,product_name,meter_start,meter_end,logged_at")
-        .eq("product_name", product.name)
-        .order("logged_at", { ascending: false })
-        .limit(1);
-      if (byName.error) throw byName.error;
-      return (byName.data || [])[0] || null;
+      return await readLatest("fuel_logs", "logged_at")
+        || await readLatest("fuel_tests", "tested_at");
     }
 
     const [gasLog, dieselLog] = await Promise.all([
@@ -845,13 +850,20 @@
       .select("product_id,product_name,meter_start,meter_end,qty,logged_at")
       .order("logged_at", { ascending: false })
       .limit(10);
+    const recentTests = await db
+      .from("fuel_tests")
+      .select("product_id,product_name,meter_start,meter_end,qty,tested_at")
+      .order("tested_at", { ascending: false })
+      .limit(10);
     return {
       version: window.POS_SUPABASE_ADAPTER_VERSION,
       detectedFuels: fuels,
       lastData: latest.lastData,
       currentPrices: latest.currentPrices,
       recentLogs: recentLogs.data || [],
-      recentLogsError: recentLogs.error && recentLogs.error.message
+      recentLogsError: recentLogs.error && recentLogs.error.message,
+      recentTests: recentTests.data || [],
+      recentTestsError: recentTests.error && recentTests.error.message
     };
   }
 
