@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>POS Pump Migration</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f3f6fb; color: #172033; }
+      main { max-width: 980px; margin: 0 auto; padding: 24px; }
+      h1 { margin: 0 0 6px; font-size: 28px; }
+      p { color: #64748b; }
+      .card { background: white; border: 1px solid #dbe3ef; border-radius: 10px; padding: 18px; margin: 14px 0; box-shadow: 0 8px 22px rgba(15,23,42,.06); }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
+      input, button { font: inherit; }
+      input { width: 100%; border: 1px solid #dbe3ef; border-radius: 8px; padding: 11px 12px; background: white; }
+      input[type="file"] { padding: 8px; }
+      button { border: 0; border-radius: 8px; padding: 12px 16px; font-weight: 800; cursor: pointer; background: #0f766e; color: white; }
+      button.secondary { background: #e8eef6; color: #172033; }
+      button:disabled { opacity: .55; cursor: not-allowed; }
+      .files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .log { background: #0f172a; color: #dbeafe; border-radius: 8px; padding: 14px; min-height: 180px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+      .ok { color: #16a34a; }
+      .warn { color: #ca8a04; }
+      .danger { color: #dc2626; }
+      @media (max-width: 760px) { .grid, .files { grid-template-columns: 1fr; } main { padding: 14px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ย้ายข้อมูล Google Sheet ไป Supabase</h1>
+      <p>Export แต่ละชีตเป็น CSV แล้วเลือกไฟล์ด้านล่าง จากนั้นกดนำเข้า</p>
+
+      <section class="card">
+        <h2>1. เชื่อม Supabase</h2>
+        <div class="grid">
+          <label>Supabase URL
+            <input id="url" placeholder="https://xxxx.supabase.co/rest/v1/">
+          </label>
+          <label>Publishable key
+            <input id="key" placeholder="sb_publishable_...">
+          </label>
+          <label>Email
+            <input id="email" type="email">
+          </label>
+          <label>Password
+            <input id="password" type="password">
+          </label>
+        </div>
+        <p><button id="btnLogin">เข้าสู่ระบบ</button> <button id="btnClear" class="secondary">ล้างค่า</button></p>
+        <div id="authStatus"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. เลือก CSV</h2>
+        <div class="files">
+          <label>รายการสินค้า.csv <input id="products" type="file" accept=".csv,text/csv"></label>
+          <label>รายการขาย.csv <input id="sales" type="file" accept=".csv,text/csv"></label>
+          <label>รายการซื้อ.csv <input id="purchases" type="file" accept=".csv,text/csv"></label>
+          <label>รายการจ่ายอื่นๆ.csv <input id="expenses" type="file" accept=".csv,text/csv"></label>
+          <label>ค้างชำระ.csv <input id="debts" type="file" accept=".csv,text/csv"></label>
+          <label>บันทึกหัวจ่าย.csv <input id="fuelLogs" type="file" accept=".csv,text/csv"></label>
+          <label>ทดสอบน้ำมัน.csv <input id="fuelTests" type="file" accept=".csv,text/csv"></label>
+          <label>บันทึกยอดเงิน.csv <input id="cash" type="file" accept=".csv,text/csv"></label>
+          <label>ประวัติราคา.csv <input id="priceHistory" type="file" accept=".csv,text/csv"></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3. นำเข้า</h2>
+        <p>ลำดับ import: สินค้า → ซื้อ → ขาย → หนี้ → รายจ่าย → หัวจ่าย → ทดสอบ → เงินสด → ประวัติราคา</p>
+        <button id="btnImport" disabled>นำเข้า Supabase</button>
+        <button id="btnDryRun" class="secondary">อ่านไฟล์อย่างเดียว</button>
+      </section>
+
+      <section class="card">
+        <h2>Log</h2>
+        <div id="log" class="log"></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = { db: null, productsByName: {} };
+      const fields = ["url", "key", "email"];
+      fields.forEach(id => $(id).value = localStorage.getItem("mig_" + id) || "");
+
+      function log(text) {
+        $("log").textContent += text + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      }
+
+      function normalizeUrl(url) {
+        return String(url || "").trim().replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/g, "");
+      }
+
+      function number(v) {
+        if (v == null) return 0;
+        const s = String(v).replace(/,/g, "").trim();
+        if (!s || s === "-") return 0;
+        return Number(s) || 0;
+      }
+
+      function text(v) {
+        return String(v == null ? "" : v).trim();
+      }
+
+      function parseDateTime(dateValue, timeValue) {
+        const raw = text(dateValue);
+        const time = text(timeValue);
+        if (!raw) return new Date().toISOString();
+
+        let datePart = raw;
+        let timePart = time || "00:00:00";
+        if (raw.includes(" ")) {
+          const parts = raw.split(/\s+/);
+          datePart = parts[0];
+          timePart = parts[1] || timePart;
+        }
+        if (/^\d{1,2}:\d{2}/.test(datePart)) {
+          datePart = new Date().toLocaleDateString("en-GB");
+          timePart = raw;
+        }
+
+        let y, m, d;
+        if (/^\d{4}-\d{1,2}-\d{1,2}/.test(datePart)) {
+          [y, m, d] = datePart.split(/[/-]/).map(Number);
+        } else {
+          [d, m, y] = datePart.split(/[/-]/).map(Number);
+          if (y > 2400) y -= 543;
+        }
+        if (!y || !m || !d) return new Date().toISOString();
+        if (!/^\d{1,2}:\d{2}/.test(timePart)) timePart = "00:00:00";
+        if (/^\d{1,2}:\d{2}$/.test(timePart)) timePart += ":00";
+        return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${timePart}+07:00`;
+      }
+
+      function isHeader(row) {
+        const joined = row.map(text).join("|");
+        return /วันที่|ชื่อ|สินค้า|ราคา|จำนวน|ลูกค้า|ประเภท/.test(joined);
+      }
+
+      async function readCsv(inputId) {
+        const file = $(inputId).files[0];
+        if (!file) return [];
+        const parsed = await new Promise((resolve, reject) => {
+          Papa.parse(file, {
+            skipEmptyLines: true,
+            complete: resolve,
+            error: reject
+          });
+        });
+        let rows = parsed.data || [];
+        if (rows.length && isHeader(rows[0])) rows = rows.slice(1);
+        return rows.filter(row => row.some(cell => text(cell)));
+      }
+
+      async function login() {
+        const url = normalizeUrl($("url").value);
+        const key = text($("key").value);
+        const email = text($("email").value);
+        const password = $("password").value;
+        fields.forEach(id => localStorage.setItem("mig_" + id, $(id).value));
+        state.db = supabase.createClient(url, key);
+        $("authStatus").textContent = "กำลัง login...";
+        const { error } = await state.db.auth.signInWithPassword({ email, password });
+        if (error) {
+          $("authStatus").innerHTML = `<span class="danger">${error.message}</span>`;
+          return;
+        }
+        $("authStatus").innerHTML = `<span class="ok">พร้อมนำเข้า</span>`;
+        $("btnImport").disabled = false;
+      }
+
+      async function batchInsert(table, rows, size = 500) {
+        if (!rows.length) return;
+        for (let i = 0; i < rows.length; i += size) {
+          const chunk = rows.slice(i, i + size);
+          const { error } = await state.db.from(table).insert(chunk);
+          if (error) throw new Error(`${table}: ${error.message}`);
+        }
+      }
+
+      async function upsertProducts(rows) {
+        const data = rows.map(r => {
+          const name = text(r[0]);
+          const category = text(r[2]) || "สินค้า";
+          return {
+            name,
+            sale_price: number(r[1]),
+            category,
+            image_url: text(r[3]) || null,
+            stock_qty: number(r[4]),
+            unit: text(r[5]) || (name.includes("ดีเซล") || name.includes("เบนซิน") ? "ลิตร" : "ชิ้น"),
+            is_fuel: name.includes("ดีเซล") || name.includes("เบนซิน") || category.includes("น้ำมันเชื้อเพลิง"),
+            is_active: true
+          };
+        }).filter(r => r.name);
+        if (data.length) {
+          const { error } = await state.db.from("products").upsert(data, { onConflict: "name" });
+          if (error) throw error;
+        }
+        await loadProductMap();
+        log(`products: ${data.length}`);
+      }
+
+      async function loadProductMap() {
+        const { data, error } = await state.db.from("products").select("id,name,unit,sale_price,avg_cost");
+        if (error) throw error;
+        state.productsByName = Object.fromEntries((data || []).map(p => [p.name, p]));
+      }
+
+      function product(name) {
+        return state.productsByName[text(name)] || null;
+      }
+
+      async function importPurchases(rows) {
+        const data = rows.map(r => {
+          const p = product(r[1]);
+          return {
+            purchased_at: parseDateTime(r[0]),
+            product_id: p && p.id,
+            product_name: text(r[1]),
+            unit_cost: number(r[2]),
+            qty: number(r[3]),
+            unit: text(r[4]) || (p && p.unit) || "ชิ้น",
+            avg_cost_after: number(r[6]) || number(r[2]),
+            note: null
+          };
+        }).filter(r => r.product_name);
+        await batchInsert("purchases", data);
+        log(`purchases: ${data.length}`);
+      }
+
+      async function importSales(rows) {
+        const data = rows.map(r => {
+          const p = product(r[1]);
+          const note = text(r[6]);
+          return {
+            sold_at: parseDateTime(r[0]),
+            product_id: p && p.id,
+            product_name: text(r[1]),
+            unit_price: number(r[2]),
+            qty: number(r[3]),
+            unit: text(r[4]) || (p && p.unit) || "ชิ้น",
+            note,
+            payment_status: note.includes("ค้าง") ? "debt" : "paid",
+            source: "sheet-import"
+          };
+        }).filter(r => r.product_name);
+        await batchInsert("sales", data);
+        log(`sales: ${data.length}`);
+      }
+
+      async function importExpenses(rows) {
+        const data = rows.map(r => ({
+          spent_at: parseDateTime(r[0]),
+          title: text(r[1]),
+          amount: number(r[2]) || number(r[3]),
+          note: text(r[4]) || null,
+          expense_type: text(r[5]).includes("ธนาคาร") ? "bank" : text(r[5]).includes("ทุน") ? "capital" : "expense"
+        })).filter(r => r.title && r.amount);
+        await batchInsert("expenses", data);
+        log(`expenses: ${data.length}`);
+      }
+
+      async function importDebts(rows) {
+        const data = rows.map(r => {
+          const p = product(r[2]);
+          const statusText = text(r[6]);
+          return {
+            debt_at: parseDateTime(r[0]),
+            customer_name: text(r[1]),
+            product_id: p && p.id,
+            product_name: text(r[2]),
+            qty: number(r[3]),
+            amount: number(r[4]),
+            filler_name: text(r[5]) || null,
+            status: statusText.includes("จ่ายแล้ว") ? "paid" : "unpaid",
+            paid_at: text(r[7]) ? parseDateTime(r[7]) : null,
+            note: null
+          };
+        }).filter(r => r.customer_name && r.product_name);
+        await batchInsert("debts", data);
+        log(`debts: ${data.length}`);
+
+        const paid = data.filter(r => r.status === "paid" && r.amount > 0).map(r => ({
+          paid_at: r.paid_at || r.debt_at,
+          customer_name: r.customer_name,
+          amount: r.amount,
+          note: "import paid debt"
+        }));
+        await batchInsert("debt_payments", paid);
+        if (paid.length) log(`debt_payments: ${paid.length}`);
+      }
+
+      async function importFuelLogs(rows) {
+        const data = rows.map(r => {
+          const p = product(r[2]);
+          return {
+            logged_at: parseDateTime(r[0], r[1]),
+            product_id: p && p.id,
+            product_name: text(r[2]),
+            meter_start: number(r[6]) || number(r[3]),
+            meter_end: number(r[7]) || number(r[4]),
+            qty: number(r[8]),
+            unit_price: number(r[9]),
+            note: text(r[11]) || null,
+            stock_after: r[12] === undefined ? null : number(r[12])
+          };
+        }).filter(r => r.product_name);
+        await batchInsert("fuel_logs", data);
+        log(`fuel_logs: ${data.length}`);
+      }
+
+      async function importFuelTests(rows) {
+        const data = rows.map(r => {
+          const p = product(r[2]);
+          return {
+            tested_at: parseDateTime(r[0], r[1]),
+            product_id: p && p.id,
+            product_name: text(r[2]),
+            meter_start: number(r[4]),
+            meter_end: number(r[5]),
+            qty: number(r[6]),
+            note: text(r[7]) || null
+          };
+        }).filter(r => r.product_name);
+        await batchInsert("fuel_tests", data);
+        log(`fuel_tests: ${data.length}`);
+      }
+
+      async function importCash(rows) {
+        const data = rows.map(r => ({
+          checked_at: parseDateTime(r[0], r[1]),
+          system_cash: number(r[2]),
+          actual_cash: number(r[3]),
+          actual_transfer: number(r[4]),
+          note: text(r[7]) || null
+        })).filter(r => r.checked_at);
+        await batchInsert("cash_reconciliations", data);
+        log(`cash_reconciliations: ${data.length}`);
+      }
+
+      async function importPriceHistory(rows) {
+        const data = rows.map(r => {
+          const p = product(r[1]);
+          return {
+            changed_at: parseDateTime(r[0]),
+            product_id: p && p.id,
+            product_name: text(r[1]),
+            old_price: number(r[2]),
+            new_price: number(r[3])
+          };
+        }).filter(r => r.product_name);
+        await batchInsert("price_history", data);
+        log(`price_history: ${data.length}`);
+      }
+
+      async function dryRun() {
+        $("log").textContent = "";
+        for (const id of ["products", "sales", "purchases", "expenses", "debts", "fuelLogs", "fuelTests", "cash", "priceHistory"]) {
+          const rows = await readCsv(id);
+          if (rows.length) log(`${id}: ${rows.length} rows`);
+        }
+      }
+
+      async function runImport() {
+        if (!state.db) return;
+        $("btnImport").disabled = true;
+        $("log").textContent = "";
+        try {
+          const products = await readCsv("products");
+          if (products.length) await upsertProducts(products);
+          else await loadProductMap();
+
+          const purchases = await readCsv("purchases");
+          if (purchases.length) await importPurchases(purchases);
+
+          const sales = await readCsv("sales");
+          if (sales.length) await importSales(sales);
+
+          const debts = await readCsv("debts");
+          if (debts.length) await importDebts(debts);
+
+          const expenses = await readCsv("expenses");
+          if (expenses.length) await importExpenses(expenses);
+
+          const fuelLogs = await readCsv("fuelLogs");
+          if (fuelLogs.length) await importFuelLogs(fuelLogs);
+
+          const fuelTests = await readCsv("fuelTests");
+          if (fuelTests.length) await importFuelTests(fuelTests);
+
+          const cash = await readCsv("cash");
+          if (cash.length) await importCash(cash);
+
+          const priceHistory = await readCsv("priceHistory");
+          if (priceHistory.length) await importPriceHistory(priceHistory);
+
+          log("DONE");
+        } catch (err) {
+          log("ERROR: " + (err.message || err));
+        } finally {
+          $("btnImport").disabled = false;
+        }
+      }
+
+      $("btnLogin").addEventListener("click", login);
+      $("btnImport").addEventListener("click", runImport);
+      $("btnDryRun").addEventListener("click", dryRun);
+      $("btnClear").addEventListener("click", () => {
+        fields.forEach(id => localStorage.removeItem("mig_" + id));
+        location.reload();
+      });
+    </script>
+  </body>
+</html>
