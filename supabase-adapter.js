@@ -17,8 +17,7 @@
   }
 
   function clientUrl(url) {
-    const raw = String(url || "").trim();
-    return /\/rest\/v1\/?$/i.test(raw) ? raw : normalizeBaseUrl(raw);
+    return normalizeBaseUrl(url);
   }
 
   function moneyNumber(value) {
