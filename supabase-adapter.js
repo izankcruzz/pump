@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-today-history-v8";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-cost-balance-v9";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -35,6 +35,13 @@
       month: "2-digit",
       day: "2-digit"
     }).format(d);
+  }
+
+  function addDays(dateText, days) {
+    const [y, m, d] = String(dateText || bkkDate()).split("-").map(Number);
+    const date = new Date(y, (m || 1) - 1, d || 1);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
   }
 
   function thaiDate(value) {
@@ -196,7 +203,35 @@
     const db = await ensureReady();
     const { data, error } = await db.from("v_product_stock").select("*").order("is_fuel", { ascending: false }).order("name");
     if (error) throw error;
-    return data || [];
+    const rows = data || [];
+    if (!rows.some(row => Number(row.avg_cost || 0) <= 0)) return rows;
+
+    try {
+      const { data: purchases, error: purchaseError } = await db
+        .from("purchases")
+        .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at")
+        .order("purchased_at", { ascending: false })
+        .limit(5000);
+      if (purchaseError) throw purchaseError;
+
+      const latestCost = {};
+      (purchases || []).forEach(row => {
+        const cost = Number(row.avg_cost_after || row.unit_cost || 0);
+        if (cost <= 0) return;
+        if (row.product_id && !latestCost[row.product_id]) latestCost[row.product_id] = cost;
+        if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
+      });
+
+      return rows.map(row => {
+        const current = Number(row.avg_cost || 0);
+        if (current > 0) return row;
+        const fallback = latestCost[row.id] || latestCost[row.name] || 0;
+        return fallback > 0 ? { ...row, avg_cost: fallback, profit_per_unit: Number(row.sale_price || 0) - fallback } : row;
+      });
+    } catch (err) {
+      console.warn("purchase cost fallback failed", err);
+      return rows;
+    }
   }
 
   async function getProductData() {
@@ -529,6 +564,7 @@
       const total = Number(row.total || row.unit_price * qty || 0);
       return {
         name: row.product_name,
+        day: bkkDate(row.sold_at),
         qty,
         unit: row.unit,
         total,
@@ -541,7 +577,8 @@
     const expenseList = expenses.map(row => ({
       title: row.title,
       amount: Number(row.amount || 0),
-      type: row.expense_type === "capital" ? "stock" : "general"
+      type: row.expense_type === "capital" ? "stock" : "general",
+      day: bkkDate(row.spent_at)
     }));
     const debtList = debts.map(row => ({
       customer: row.customer_name,
@@ -570,6 +607,13 @@
     const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
     const ledgerBalances = await getArchiveBalances(to);
+    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
+    const capitalBalance = ledgerBalances.capital !== null
+      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
+      : capitalReturned - stockPaid;
+    const profitBalance = ledgerBalances.profit !== null
+      ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
+      : profit - generalExpenses;
 
     return {
       summary: {
@@ -585,8 +629,14 @@
         debtRepaid,
         capitalReturned,
         capitalNet: capitalReturned - stockPaid,
-        capitalBalance: ledgerBalances.capital ?? (capitalReturned - stockPaid),
-        profitBalance: ledgerBalances.profit ?? (profit - generalExpenses),
+        capitalBalance,
+        profitBalance,
+        openingCapitalBalance: ledgerBalances.capital,
+        openingProfitBalance: ledgerBalances.profit,
+        balanceDeltaCapitalReturned: balanceDeltas.capitalReturned,
+        balanceDeltaStockPaid: balanceDeltas.stockPaid,
+        balanceDeltaProfit: balanceDeltas.profit,
+        balanceDeltaGeneralExpenses: balanceDeltas.generalExpenses,
         generalExpenses
       },
       prices: {
@@ -622,7 +672,7 @@
 
   async function getArchiveBalances(toDate) {
     const db = await ensureReady();
-    const result = { capital: null, profit: null };
+    const result = { capital: null, profit: null, capitalDate: null, profitDate: null };
 
     const readLedgerType = async (ledgerType, useDateFilter) => {
       let query = db
@@ -636,8 +686,14 @@
       if (error) throw error;
       const row = (data || [])[0];
       if (!row) return;
-      if (ledgerType === "capital") result.capital = Number(row.balance_amount || 0);
-      if (ledgerType === "profit") result.profit = Number(row.balance_amount || 0);
+      if (ledgerType === "capital") {
+        result.capital = Number(row.balance_amount || 0);
+        result.capitalDate = row.entry_date;
+      }
+      if (ledgerType === "profit") {
+        result.profit = Number(row.balance_amount || 0);
+        result.profitDate = row.entry_date;
+      }
     };
 
     try {
@@ -654,8 +710,14 @@
 
     const applyDailySummary = row => {
       if (!row) return;
-      if (result.capital === null) result.capital = Number(row.capital_balance || 0);
-      if (result.profit === null) result.profit = Number(row.profit || 0);
+      if (result.capital === null) {
+        result.capital = Number(row.capital_balance || 0);
+        result.capitalDate = row.summary_date;
+      }
+      if (result.profit === null) {
+        result.profit = Number(row.profit || 0);
+        result.profitDate = row.summary_date;
+      }
     };
 
     const readDailySummary = async useDateFilter => {
@@ -678,6 +740,51 @@
         console.warn("daily_summaries balance lookup failed", err);
       }
     }
+
+    return result;
+  }
+
+  async function getBalanceDeltas(db, productByName, ledgerBalances, toDate) {
+    const result = { capitalReturned: 0, stockPaid: 0, profit: 0, generalExpenses: 0 };
+    const startDates = [ledgerBalances.capitalDate, ledgerBalances.profitDate]
+      .filter(Boolean)
+      .map(date => addDays(date, 1));
+    if (startDates.length === 0) return result;
+
+    const fromDate = startDates.sort()[0];
+    if (fromDate > toDate) return result;
+
+    const start = `${fromDate}T00:00:00+07:00`;
+    const end = `${toDate}T23:59:59+07:00`;
+    const [salesRes, expensesRes] = await Promise.all([
+      db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
+      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end)
+    ]);
+    if (salesRes.error) throw salesRes.error;
+    if (expensesRes.error) throw expensesRes.error;
+
+    const capitalStart = ledgerBalances.capitalDate ? addDays(ledgerBalances.capitalDate, 1) : fromDate;
+    const profitStart = ledgerBalances.profitDate ? addDays(ledgerBalances.profitDate, 1) : fromDate;
+
+    (salesRes.data || []).forEach(row => {
+      const day = bkkDate(row.sold_at);
+      const product = productByName[row.product_name] || {};
+      const qty = Number(row.qty || 0);
+      const total = Number(row.total || row.unit_price * qty || 0);
+      const costTotal = Number(product.avg_cost || 0) * qty;
+      if (day >= capitalStart) result.capitalReturned += costTotal;
+      if (day >= profitStart) result.profit += total - costTotal;
+    });
+
+    (expensesRes.data || []).forEach(row => {
+      const day = bkkDate(row.spent_at);
+      const amount = Number(row.amount || 0);
+      if (row.expense_type === "capital") {
+        if (day >= capitalStart) result.stockPaid += amount;
+      } else if (day >= profitStart) {
+        result.generalExpenses += amount;
+      }
+    });
 
     return result;
   }
