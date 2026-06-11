@@ -64,14 +64,16 @@
           <label>ค้างชำระ.csv <input id="debts" type="file" accept=".csv,text/csv"></label>
           <label>บันทึกหัวจ่าย.csv <input id="fuelLogs" type="file" accept=".csv,text/csv"></label>
           <label>ทดสอบน้ำมัน.csv <input id="fuelTests" type="file" accept=".csv,text/csv"></label>
-          <label>บันทึกยอดเงิน.csv <input id="cash" type="file" accept=".csv,text/csv"></label>
+          <label>สรุปยอดรายวัน.csv <input id="dailySummaries" type="file" accept=".csv,text/csv"></label>
+          <label>เงินทุน.csv <input id="capitalMoney" type="file" accept=".csv,text/csv"></label>
+          <label>เงินกำไร.csv <input id="profitMoney" type="file" accept=".csv,text/csv"></label>
           <label>ประวัติราคา.csv <input id="priceHistory" type="file" accept=".csv,text/csv"></label>
         </div>
       </section>
 
       <section class="card">
         <h2>3. นำเข้า</h2>
-        <p>ลำดับ import: สินค้า → ซื้อ → ขาย → หนี้ → รายจ่าย → หัวจ่าย → ทดสอบ → เงินสด → ประวัติราคา</p>
+        <p>ลำดับ import: สินค้า → ซื้อ → ขาย → หนี้ → รายจ่าย → หัวจ่าย → ทดสอบ → สรุปรายวัน → เงินทุน/กำไร → ประวัติราคา</p>
         <button id="btnImport" disabled>นำเข้า Supabase</button>
         <button id="btnDryRun" class="secondary">อ่านไฟล์อย่างเดียว</button>
       </section>
@@ -136,6 +138,11 @@
         if (!/^\d{1,2}:\d{2}/.test(timePart)) timePart = "00:00:00";
         if (/^\d{1,2}:\d{2}$/.test(timePart)) timePart += ":00";
         return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${timePart}+07:00`;
+      }
+
+      function parseDateOnly(dateValue) {
+        const iso = parseDateTime(dateValue);
+        return iso ? iso.slice(0, 10) : null;
       }
 
       function isHeader(row) {
@@ -333,18 +340,6 @@
         log(`fuel_tests: ${data.length}`);
       }
 
-      async function importCash(rows) {
-        const data = rows.map(r => ({
-          checked_at: parseDateTime(r[0], r[1]),
-          system_cash: number(r[2]),
-          actual_cash: number(r[3]),
-          actual_transfer: number(r[4]),
-          note: text(r[7]) || null
-        })).filter(r => r.checked_at);
-        await batchInsert("cash_reconciliations", data);
-        log(`cash_reconciliations: ${data.length}`);
-      }
-
       async function importPriceHistory(rows) {
         const data = rows.map(r => {
           const p = product(r[1]);
@@ -360,9 +355,42 @@
         log(`price_history: ${data.length}`);
       }
 
+      async function importDailySummaries(rows) {
+        const data = rows.map(r => ({
+          summary_date: parseDateOnly(r[0]),
+          sales: number(r[1]),
+          expenses: number(r[2]),
+          debt: number(r[3]),
+          repaid: number(r[4]),
+          cash: number(r[5]),
+          profit: number(r[6]),
+          capital_balance: number(r[7]),
+          note: text(r.slice(8).join(" | ")) || null,
+          source: "sheet-import"
+        })).filter(r => r.summary_date);
+        await batchInsert("daily_summaries", data);
+        log(`daily_summaries: ${data.length}`);
+      }
+
+      async function importMoneyLedger(rows, ledgerType) {
+        const data = rows.map(r => ({
+          ledger_type: ledgerType,
+          entry_date: parseDateOnly(r[0]),
+          income_amount: number(r[1]),
+          expense_amount: number(r[2]),
+          net_amount: number(r[3]),
+          balance_amount: number(r[4]),
+          income_detail: text(r[5]) || null,
+          expense_detail: text(r[6]) || null,
+          source: "sheet-import"
+        })).filter(r => r.entry_date);
+        await batchInsert("money_ledger", data);
+        log(`${ledgerType}: ${data.length}`);
+      }
+
       async function dryRun() {
         $("log").textContent = "";
-        for (const id of ["products", "sales", "purchases", "expenses", "debts", "fuelLogs", "fuelTests", "cash", "priceHistory"]) {
+        for (const id of ["products", "sales", "purchases", "expenses", "debts", "fuelLogs", "fuelTests", "dailySummaries", "capitalMoney", "profitMoney", "priceHistory"]) {
           const rows = await readCsv(id);
           if (rows.length) log(`${id}: ${rows.length} rows`);
         }
@@ -395,8 +423,14 @@
           const fuelTests = await readCsv("fuelTests");
           if (fuelTests.length) await importFuelTests(fuelTests);
 
-          const cash = await readCsv("cash");
-          if (cash.length) await importCash(cash);
+          const dailySummaries = await readCsv("dailySummaries");
+          if (dailySummaries.length) await importDailySummaries(dailySummaries);
+
+          const capitalMoney = await readCsv("capitalMoney");
+          if (capitalMoney.length) await importMoneyLedger(capitalMoney, "capital");
+
+          const profitMoney = await readCsv("profitMoney");
+          if (profitMoney.length) await importMoneyLedger(profitMoney, "profit");
 
           const priceHistory = await readCsv("priceHistory");
           if (priceHistory.length) await importPriceHistory(priceHistory);
