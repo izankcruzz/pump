@@ -141,6 +141,7 @@
       }
 
       function parseDateOnly(dateValue) {
+        if (/^รวม|total/i.test(text(dateValue))) return null;
         const iso = parseDateTime(dateValue);
         return iso ? iso.slice(0, 10) : null;
       }
@@ -224,6 +225,42 @@
         return state.productsByName[text(name)] || null;
       }
 
+      async function repairAverageCostsFromPurchases() {
+        const { data, error } = await state.db
+          .from("purchases")
+          .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at")
+          .order("purchased_at", { ascending: false })
+          .limit(10000);
+        if (error) throw error;
+
+        const latestById = new Map();
+        const latestByName = new Map();
+        (data || []).forEach(row => {
+          const cost = number(row.avg_cost_after) || number(row.unit_cost);
+          if (cost <= 0) return;
+          if (row.product_id && !latestById.has(row.product_id)) latestById.set(row.product_id, cost);
+          if (row.product_name && !latestByName.has(row.product_name)) latestByName.set(row.product_name, cost);
+        });
+
+        let updated = 0;
+        for (const [id, cost] of latestById.entries()) {
+          const { error: updateError } = await state.db.from("products").update({ avg_cost: cost }).eq("id", id);
+          if (updateError) throw updateError;
+          updated++;
+        }
+
+        for (const [name, cost] of latestByName.entries()) {
+          const productRow = state.productsByName[name];
+          if (productRow && latestById.has(productRow.id)) continue;
+          const { error: updateError } = await state.db.from("products").update({ avg_cost: cost }).eq("name", name);
+          if (updateError) throw updateError;
+          updated++;
+        }
+
+        await loadProductMap();
+        log(`products.avg_cost repaired from purchases: ${updated}`);
+      }
+
       async function importPurchases(rows) {
         const data = rows.map(r => {
           const p = product(r[1]);
@@ -240,6 +277,7 @@
         }).filter(r => r.product_name);
         await batchInsert("purchases", data);
         log(`purchases: ${data.length}`);
+        await repairAverageCostsFromPurchases();
       }
 
       async function importSales(rows) {
