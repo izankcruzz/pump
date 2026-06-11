@@ -1,493 +1,984 @@
-<!doctype html>
-<html lang="th">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>POS Pump Migration</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <style>
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f3f6fb; color: #172033; }
-      main { max-width: 980px; margin: 0 auto; padding: 24px; }
-      h1 { margin: 0 0 6px; font-size: 28px; }
-      p { color: #64748b; }
-      .card { background: white; border: 1px solid #dbe3ef; border-radius: 10px; padding: 18px; margin: 14px 0; box-shadow: 0 8px 22px rgba(15,23,42,.06); }
-      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
-      input, button { font: inherit; }
-      input { width: 100%; border: 1px solid #dbe3ef; border-radius: 8px; padding: 11px 12px; background: white; }
-      input[type="file"] { padding: 8px; }
-      button { border: 0; border-radius: 8px; padding: 12px 16px; font-weight: 800; cursor: pointer; background: #0f766e; color: white; }
-      button.secondary { background: #e8eef6; color: #172033; }
-      button:disabled { opacity: .55; cursor: not-allowed; }
-      .files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .log { background: #0f172a; color: #dbeafe; border-radius: 8px; padding: 14px; min-height: 180px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
-      .ok { color: #16a34a; }
-      .warn { color: #ca8a04; }
-      .danger { color: #dc2626; }
-      @media (max-width: 760px) { .grid, .files { grid-template-columns: 1fr; } main { padding: 14px; } }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>ย้ายข้อมูล Google Sheet ไป Supabase</h1>
-      <p>Export แต่ละชีตเป็น CSV แล้วเลือกไฟล์ด้านล่าง จากนั้นกดนำเข้า</p>
+(function () {
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-latest-cost-v10";
+  console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
-      <section class="card">
-        <h2>1. เชื่อม Supabase</h2>
-        <div class="grid">
-          <label>Supabase URL
-            <input id="url" placeholder="https://xxxx.supabase.co/rest/v1/">
-          </label>
-          <label>Publishable key
-            <input id="key" placeholder="sb_publishable_...">
-          </label>
-          <label>Email
-            <input id="email" type="email">
-          </label>
-          <label>Password
-            <input id="password" type="password">
-          </label>
+  const STORAGE_URL = "POS_SUPABASE_URL";
+  const STORAGE_KEY = "POS_SUPABASE_ANON_KEY";
+  const FUEL_CATEGORY = "น้ำมันเชื้อเพลิง";
+  const FUEL_NAMES = ["เบนซิน 95", "ดีเซล"];
+
+  let client = null;
+  let authReadyResolve;
+  let authReadyReject;
+  let authReady = new Promise((resolve, reject) => {
+    authReadyResolve = resolve;
+    authReadyReject = reject;
+  });
+
+  function normalizeBaseUrl(url) {
+    return String(url || "").trim().replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/g, "");
+  }
+
+  function clientUrl(url) {
+    return normalizeBaseUrl(url);
+  }
+
+  function moneyNumber(value) {
+    return Number(value || 0);
+  }
+
+  function bkkDate(value) {
+    const d = value ? new Date(value) : new Date();
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(d);
+  }
+
+  function addDays(dateText, days) {
+    const [y, m, d] = String(dateText || bkkDate()).split("-").map(Number);
+    const date = new Date(y, (m || 1) - 1, d || 1);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function thaiDate(value) {
+    const [y, m, d] = bkkDate(value).split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  function thaiTime(value) {
+    const d = value ? new Date(value) : new Date();
+    return new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(d);
+  }
+
+  function isFuelProduct(row) {
+    return row.is_fuel || FUEL_NAMES.includes(row.name);
+  }
+
+  function findFuelRows(rows) {
+    const fuelRows = (rows || []).filter(isFuelProduct);
+    const gas95 = fuelRows.find(row => String(row.name || "").includes("95"))
+      || fuelRows.find(row => /gas|benz|เบนซิน|แก๊ส/i.test(String(row.name || "")))
+      || fuelRows[0]
+      || null;
+    const diesel = fuelRows.find(row => row.id !== (gas95 && gas95.id) && /diesel|ดีเซล/i.test(String(row.name || "")))
+      || fuelRows.find(row => row.id !== (gas95 && gas95.id))
+      || null;
+    return { gas95, diesel };
+  }
+
+  function mapProduct(row, soldRankMap) {
+    const fuel = isFuelProduct(row);
+    return {
+      id: row.id,
+      name: row.name,
+      price: moneyNumber(row.sale_price),
+      category: fuel ? FUEL_CATEGORY : (row.category || "สินค้า"),
+      img: row.image_url || "https://placehold.co/400x400?text=No+Img",
+      stock: moneyNumber(row.stock_qty),
+      unit: row.unit || (fuel ? "ลิตร" : "ชิ้น"),
+      soldRank: soldRankMap && soldRankMap[row.name] ? soldRankMap[row.name] : 0,
+      cost: moneyNumber(row.avg_cost)
+    };
+  }
+
+  async function ensureReady() {
+    await authReady;
+    if (!client) throw new Error("Supabase client not ready");
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    if (!data.session) {
+      showLogin();
+      throw new Error("กรุณา login");
+    }
+    return client;
+  }
+
+  function showLogin(message) {
+    const overlay = document.getElementById("supabase-login-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("hidden");
+    const status = document.getElementById("sb-login-status");
+    if (status && message) status.textContent = message;
+  }
+
+  function hideLogin() {
+    const overlay = document.getElementById("supabase-login-overlay");
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  function setLoginStatus(text, danger) {
+    const status = document.getElementById("sb-login-status");
+    if (!status) return;
+    status.textContent = text || "";
+    status.className = danger ? "text-sm text-red-600" : "text-sm text-slate-500";
+  }
+
+  function createLoginOverlay() {
+    if (document.getElementById("supabase-login-overlay")) return;
+    const wrap = document.createElement("div");
+    wrap.id = "supabase-login-overlay";
+    wrap.className = "fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4";
+    wrap.innerHTML = `
+      <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-white/50 p-6 space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
+            <i class="fa-solid fa-database text-xl"></i>
+          </div>
+          <div>
+            <div class="font-black text-slate-800 text-xl">เชื่อม Supabase</div>
+            <div class="text-xs text-slate-400">ใช้ backend ใหม่แทน Google Sheet</div>
+          </div>
         </div>
-        <p><button id="btnLogin">เข้าสู่ระบบ</button> <button id="btnClear" class="secondary">ล้างค่า</button></p>
-        <div id="authStatus"></div>
-      </section>
+        <label class="block text-sm font-bold text-slate-600">Supabase URL</label>
+        <input id="sb-url" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400" placeholder="https://xxxx.supabase.co/rest/v1/">
+        <label class="block text-sm font-bold text-slate-600">Publishable key</label>
+        <input id="sb-key" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400" placeholder="sb_publishable_...">
+        <label class="block text-sm font-bold text-slate-600">Email</label>
+        <input id="sb-email" type="email" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400">
+        <label class="block text-sm font-bold text-slate-600">Password</label>
+        <input id="sb-password" type="password" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400">
+        <button id="sb-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl p-3 font-black">เข้าสู่ระบบ</button>
+        <div id="sb-login-status" class="text-sm text-slate-500"></div>
+      </div>`;
+    document.body.appendChild(wrap);
+    document.getElementById("sb-url").value = localStorage.getItem(STORAGE_URL) || "";
+    document.getElementById("sb-key").value = localStorage.getItem(STORAGE_KEY) || "";
+    document.getElementById("sb-login-btn").addEventListener("click", loginFromOverlay);
+  }
 
-      <section class="card">
-        <h2>2. เลือก CSV</h2>
-        <div class="files">
-          <label>รายการสินค้า.csv <input id="products" type="file" accept=".csv,text/csv"></label>
-          <label>รายการขาย.csv <input id="sales" type="file" accept=".csv,text/csv"></label>
-          <label>รายการซื้อ.csv <input id="purchases" type="file" accept=".csv,text/csv"></label>
-          <label>รายการจ่ายอื่นๆ.csv <input id="expenses" type="file" accept=".csv,text/csv"></label>
-          <label>ค้างชำระ.csv <input id="debts" type="file" accept=".csv,text/csv"></label>
-          <label>บันทึกหัวจ่าย.csv <input id="fuelLogs" type="file" accept=".csv,text/csv"></label>
-          <label>ทดสอบน้ำมัน.csv <input id="fuelTests" type="file" accept=".csv,text/csv"></label>
-          <label>สรุปยอดรายวัน.csv <input id="dailySummaries" type="file" accept=".csv,text/csv"></label>
-          <label>เงินทุน.csv <input id="capitalMoney" type="file" accept=".csv,text/csv"></label>
-          <label>เงินกำไร.csv <input id="profitMoney" type="file" accept=".csv,text/csv"></label>
-          <label>ประวัติราคา.csv <input id="priceHistory" type="file" accept=".csv,text/csv"></label>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>3. นำเข้า</h2>
-        <p>ลำดับ import: สินค้า → ซื้อ → ขาย → หนี้ → รายจ่าย → หัวจ่าย → ทดสอบ → สรุปรายวัน → เงินทุน/กำไร → ประวัติราคา</p>
-        <button id="btnImport" disabled>นำเข้า Supabase</button>
-        <button id="btnDryRun" class="secondary">อ่านไฟล์อย่างเดียว</button>
-      </section>
-
-      <section class="card">
-        <h2>Log</h2>
-        <div id="log" class="log"></div>
-      </section>
-    </main>
-
-    <script>
-      const $ = (id) => document.getElementById(id);
-      const state = { db: null, productsByName: {} };
-      const fields = ["url", "key", "email"];
-      fields.forEach(id => $(id).value = localStorage.getItem("mig_" + id) || "");
-
-      function log(text) {
-        $("log").textContent += text + "\n";
-        $("log").scrollTop = $("log").scrollHeight;
+  async function loginFromOverlay() {
+    try {
+      const url = clientUrl(document.getElementById("sb-url").value);
+      const key = document.getElementById("sb-key").value.trim();
+      const email = document.getElementById("sb-email").value.trim();
+      const password = document.getElementById("sb-password").value;
+      if (!url || !key || !email || !password) {
+        setLoginStatus("กรอกให้ครบ", true);
+        return;
       }
+      localStorage.setItem(STORAGE_URL, url);
+      localStorage.setItem(STORAGE_KEY, key);
+      client = window.supabase.createClient(url, key);
+      setLoginStatus("กำลัง login...");
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      hideLogin();
+      authReadyResolve();
+      if (typeof loadDataFromSheet === "function") loadDataFromSheet();
+      if (typeof loadDashboard === "function") loadDashboard();
+    } catch (err) {
+      setLoginStatus(err.message || String(err), true);
+      authReadyReject = null;
+    }
+  }
 
-      function normalizeUrl(url) {
-        return String(url || "").trim().replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/g, "");
-      }
+  async function initAuth() {
+    createLoginOverlay();
+    const url = localStorage.getItem(STORAGE_URL);
+    const key = localStorage.getItem(STORAGE_KEY);
+    if (!url || !key) {
+      showLogin();
+      return;
+    }
+    client = window.supabase.createClient(clientUrl(url), key);
+    const { data } = await client.auth.getSession();
+    if (data.session) {
+      hideLogin();
+      authReadyResolve();
+    } else {
+      showLogin();
+    }
+  }
 
-      function number(v) {
-        if (v == null) return 0;
-        const s = String(v).replace(/,/g, "").trim();
-        if (!s || s === "-") return 0;
-        return Number(s) || 0;
-      }
+  async function productRows() {
+    const db = await ensureReady();
+    const { data, error } = await db.from("v_product_stock").select("*").order("is_fuel", { ascending: false }).order("name");
+    if (error) throw error;
+    const rows = data || [];
 
-      function text(v) {
-        return String(v == null ? "" : v).trim();
-      }
+    try {
+      const { data: purchases, error: purchaseError } = await db
+        .from("purchases")
+        .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at")
+        .order("purchased_at", { ascending: false })
+        .limit(5000);
+      if (purchaseError) throw purchaseError;
 
-      function parseDateTime(dateValue, timeValue) {
-        const raw = text(dateValue);
-        const time = text(timeValue);
-        if (!raw) return new Date().toISOString();
-
-        let datePart = raw;
-        let timePart = time || "00:00:00";
-        if (raw.includes(" ")) {
-          const parts = raw.split(/\s+/);
-          datePart = parts[0];
-          timePart = parts[1] || timePart;
-        }
-        if (/^\d{1,2}:\d{2}/.test(datePart)) {
-          datePart = new Date().toLocaleDateString("en-GB");
-          timePart = raw;
-        }
-
-        let y, m, d;
-        if (/^\d{4}-\d{1,2}-\d{1,2}/.test(datePart)) {
-          [y, m, d] = datePart.split(/[/-]/).map(Number);
-        } else {
-          [d, m, y] = datePart.split(/[/-]/).map(Number);
-          if (y > 2400) y -= 543;
-        }
-        if (!y || !m || !d) return new Date().toISOString();
-        if (!/^\d{1,2}:\d{2}/.test(timePart)) timePart = "00:00:00";
-        if (/^\d{1,2}:\d{2}$/.test(timePart)) timePart += ":00";
-        return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${timePart}+07:00`;
-      }
-
-      function parseDateOnly(dateValue) {
-        if (/^รวม|total/i.test(text(dateValue))) return null;
-        const iso = parseDateTime(dateValue);
-        return iso ? iso.slice(0, 10) : null;
-      }
-
-      function isHeader(row) {
-        const joined = row.map(text).join("|");
-        return /วันที่|ชื่อ|สินค้า|ราคา|จำนวน|ลูกค้า|ประเภท/.test(joined);
-      }
-
-      async function readCsv(inputId) {
-        const file = $(inputId).files[0];
-        if (!file) return [];
-        const parsed = await new Promise((resolve, reject) => {
-          Papa.parse(file, {
-            skipEmptyLines: true,
-            complete: resolve,
-            error: reject
-          });
-        });
-        let rows = parsed.data || [];
-        if (rows.length && isHeader(rows[0])) rows = rows.slice(1);
-        return rows.filter(row => row.some(cell => text(cell)));
-      }
-
-      async function login() {
-        const url = normalizeUrl($("url").value);
-        const key = text($("key").value);
-        const email = text($("email").value);
-        const password = $("password").value;
-        fields.forEach(id => localStorage.setItem("mig_" + id, $(id).value));
-        state.db = supabase.createClient(url, key);
-        $("authStatus").textContent = "กำลัง login...";
-        const { error } = await state.db.auth.signInWithPassword({ email, password });
-        if (error) {
-          $("authStatus").innerHTML = `<span class="danger">${error.message}</span>`;
-          return;
-        }
-        $("authStatus").innerHTML = `<span class="ok">พร้อมนำเข้า</span>`;
-        $("btnImport").disabled = false;
-      }
-
-      async function batchInsert(table, rows, size = 500) {
-        if (!rows.length) return;
-        for (let i = 0; i < rows.length; i += size) {
-          const chunk = rows.slice(i, i + size);
-          const { error } = await state.db.from(table).insert(chunk);
-          if (error) throw new Error(`${table}: ${error.message}`);
-        }
-      }
-
-      async function upsertProducts(rows) {
-        const data = rows.map(r => {
-          const name = text(r[0]);
-          const category = text(r[2]) || "สินค้า";
-          return {
-            name,
-            sale_price: number(r[1]),
-            category,
-            image_url: text(r[3]) || null,
-            stock_qty: number(r[4]),
-            unit: text(r[5]) || (name.includes("ดีเซล") || name.includes("เบนซิน") ? "ลิตร" : "ชิ้น"),
-            is_fuel: name.includes("ดีเซล") || name.includes("เบนซิน") || category.includes("น้ำมันเชื้อเพลิง"),
-            is_active: true
-          };
-        }).filter(r => r.name);
-        if (data.length) {
-          const { error } = await state.db.from("products").upsert(data, { onConflict: "name" });
-          if (error) throw error;
-        }
-        await loadProductMap();
-        log(`products: ${data.length}`);
-      }
-
-      async function loadProductMap() {
-        const { data, error } = await state.db.from("products").select("id,name,unit,sale_price,avg_cost");
-        if (error) throw error;
-        state.productsByName = Object.fromEntries((data || []).map(p => [p.name, p]));
-      }
-
-      function product(name) {
-        return state.productsByName[text(name)] || null;
-      }
-
-      async function repairAverageCostsFromPurchases() {
-        const { data, error } = await state.db
-          .from("purchases")
-          .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at")
-          .order("purchased_at", { ascending: false })
-          .limit(10000);
-        if (error) throw error;
-
-        const latestById = new Map();
-        const latestByName = new Map();
-        (data || []).forEach(row => {
-          const cost = number(row.avg_cost_after) || number(row.unit_cost);
-          if (cost <= 0) return;
-          if (row.product_id && !latestById.has(row.product_id)) latestById.set(row.product_id, cost);
-          if (row.product_name && !latestByName.has(row.product_name)) latestByName.set(row.product_name, cost);
-        });
-
-        let updated = 0;
-        for (const [id, cost] of latestById.entries()) {
-          const { error: updateError } = await state.db.from("products").update({ avg_cost: cost }).eq("id", id);
-          if (updateError) throw updateError;
-          updated++;
-        }
-
-        for (const [name, cost] of latestByName.entries()) {
-          const productRow = state.productsByName[name];
-          if (productRow && latestById.has(productRow.id)) continue;
-          const { error: updateError } = await state.db.from("products").update({ avg_cost: cost }).eq("name", name);
-          if (updateError) throw updateError;
-          updated++;
-        }
-
-        await loadProductMap();
-        log(`products.avg_cost repaired from purchases: ${updated}`);
-      }
-
-      async function importPurchases(rows) {
-        const data = rows.map(r => {
-          const p = product(r[1]);
-          return {
-            purchased_at: parseDateTime(r[0]),
-            product_id: p && p.id,
-            product_name: text(r[1]),
-            unit_cost: number(r[2]),
-            qty: number(r[3]),
-            unit: text(r[4]) || (p && p.unit) || "ชิ้น",
-            avg_cost_after: number(r[6]) || number(r[2]),
-            note: null
-          };
-        }).filter(r => r.product_name);
-        await batchInsert("purchases", data);
-        log(`purchases: ${data.length}`);
-        await repairAverageCostsFromPurchases();
-      }
-
-      async function importSales(rows) {
-        const data = rows.map(r => {
-          const p = product(r[1]);
-          const note = text(r[6]);
-          return {
-            sold_at: parseDateTime(r[0]),
-            product_id: p && p.id,
-            product_name: text(r[1]),
-            unit_price: number(r[2]),
-            qty: number(r[3]),
-            unit: text(r[4]) || (p && p.unit) || "ชิ้น",
-            note,
-            payment_status: note.includes("ค้าง") ? "debt" : "paid",
-            source: "sheet-import"
-          };
-        }).filter(r => r.product_name);
-        await batchInsert("sales", data);
-        log(`sales: ${data.length}`);
-      }
-
-      async function importExpenses(rows) {
-        const data = rows.map(r => ({
-          spent_at: parseDateTime(r[0]),
-          title: text(r[1]),
-          amount: number(r[2]) || number(r[3]),
-          note: text(r[4]) || null,
-          expense_type: text(r[5]).includes("ธนาคาร") ? "bank" : text(r[5]).includes("ทุน") ? "capital" : "expense"
-        })).filter(r => r.title && r.amount);
-        await batchInsert("expenses", data);
-        log(`expenses: ${data.length}`);
-      }
-
-      async function importDebts(rows) {
-        const data = rows.map(r => {
-          const p = product(r[2]);
-          const statusText = text(r[6]);
-          return {
-            debt_at: parseDateTime(r[0]),
-            customer_name: text(r[1]),
-            product_id: p && p.id,
-            product_name: text(r[2]),
-            qty: number(r[3]),
-            amount: number(r[4]),
-            filler_name: text(r[5]) || null,
-            status: statusText.includes("จ่ายแล้ว") ? "paid" : "unpaid",
-            paid_at: text(r[7]) ? parseDateTime(r[7]) : null,
-            note: null
-          };
-        }).filter(r => r.customer_name && r.product_name);
-        await batchInsert("debts", data);
-        log(`debts: ${data.length}`);
-
-        const paid = data.filter(r => r.status === "paid" && r.amount > 0).map(r => ({
-          paid_at: r.paid_at || r.debt_at,
-          customer_name: r.customer_name,
-          amount: r.amount,
-          note: "import paid debt"
-        }));
-        await batchInsert("debt_payments", paid);
-        if (paid.length) log(`debt_payments: ${paid.length}`);
-      }
-
-      async function importFuelLogs(rows) {
-        const data = rows.map(r => {
-          const p = product(r[2]);
-          return {
-            logged_at: parseDateTime(r[0], r[1]),
-            product_id: p && p.id,
-            product_name: text(r[2]),
-            meter_start: number(r[6]) || number(r[3]),
-            meter_end: number(r[7]) || number(r[4]),
-            qty: number(r[8]),
-            unit_price: number(r[9]),
-            note: text(r[11]) || null,
-            stock_after: r[12] === undefined ? null : number(r[12])
-          };
-        }).filter(r => r.product_name);
-        await batchInsert("fuel_logs", data);
-        log(`fuel_logs: ${data.length}`);
-      }
-
-      async function importFuelTests(rows) {
-        const data = rows.map(r => {
-          const p = product(r[2]);
-          return {
-            tested_at: parseDateTime(r[0], r[1]),
-            product_id: p && p.id,
-            product_name: text(r[2]),
-            meter_start: number(r[4]),
-            meter_end: number(r[5]),
-            qty: number(r[6]),
-            note: text(r[7]) || null
-          };
-        }).filter(r => r.product_name);
-        await batchInsert("fuel_tests", data);
-        log(`fuel_tests: ${data.length}`);
-      }
-
-      async function importPriceHistory(rows) {
-        const data = rows.map(r => {
-          const p = product(r[1]);
-          return {
-            changed_at: parseDateTime(r[0]),
-            product_id: p && p.id,
-            product_name: text(r[1]),
-            old_price: number(r[2]),
-            new_price: number(r[3])
-          };
-        }).filter(r => r.product_name);
-        await batchInsert("price_history", data);
-        log(`price_history: ${data.length}`);
-      }
-
-      async function importDailySummaries(rows) {
-        const data = rows.map(r => ({
-          summary_date: parseDateOnly(r[0]),
-          sales: number(r[1]),
-          expenses: number(r[2]),
-          debt: number(r[3]),
-          repaid: number(r[4]),
-          cash: number(r[5]),
-          profit: number(r[6]),
-          capital_balance: number(r[7]),
-          note: text(r.slice(8).join(" | ")) || null,
-          source: "sheet-import"
-        })).filter(r => r.summary_date);
-        await batchInsert("daily_summaries", data);
-        log(`daily_summaries: ${data.length}`);
-      }
-
-      async function importMoneyLedger(rows, ledgerType) {
-        const data = rows.map(r => ({
-          ledger_type: ledgerType,
-          entry_date: parseDateOnly(r[0]),
-          income_amount: number(r[1]),
-          expense_amount: number(r[2]),
-          net_amount: number(r[3]),
-          balance_amount: number(r[4]),
-          income_detail: text(r[5]) || null,
-          expense_detail: text(r[6]) || null,
-          source: "sheet-import"
-        })).filter(r => r.entry_date);
-        await batchInsert("money_ledger", data);
-        log(`${ledgerType}: ${data.length}`);
-      }
-
-      async function dryRun() {
-        $("log").textContent = "";
-        for (const id of ["products", "sales", "purchases", "expenses", "debts", "fuelLogs", "fuelTests", "dailySummaries", "capitalMoney", "profitMoney", "priceHistory"]) {
-          const rows = await readCsv(id);
-          if (rows.length) log(`${id}: ${rows.length} rows`);
-        }
-      }
-
-      async function runImport() {
-        if (!state.db) return;
-        $("btnImport").disabled = true;
-        $("log").textContent = "";
-        try {
-          const products = await readCsv("products");
-          if (products.length) await upsertProducts(products);
-          else await loadProductMap();
-
-          const purchases = await readCsv("purchases");
-          if (purchases.length) await importPurchases(purchases);
-
-          const sales = await readCsv("sales");
-          if (sales.length) await importSales(sales);
-
-          const debts = await readCsv("debts");
-          if (debts.length) await importDebts(debts);
-
-          const expenses = await readCsv("expenses");
-          if (expenses.length) await importExpenses(expenses);
-
-          const fuelLogs = await readCsv("fuelLogs");
-          if (fuelLogs.length) await importFuelLogs(fuelLogs);
-
-          const fuelTests = await readCsv("fuelTests");
-          if (fuelTests.length) await importFuelTests(fuelTests);
-
-          const dailySummaries = await readCsv("dailySummaries");
-          if (dailySummaries.length) await importDailySummaries(dailySummaries);
-
-          const capitalMoney = await readCsv("capitalMoney");
-          if (capitalMoney.length) await importMoneyLedger(capitalMoney, "capital");
-
-          const profitMoney = await readCsv("profitMoney");
-          if (profitMoney.length) await importMoneyLedger(profitMoney, "profit");
-
-          const priceHistory = await readCsv("priceHistory");
-          if (priceHistory.length) await importPriceHistory(priceHistory);
-
-          log("DONE");
-        } catch (err) {
-          log("ERROR: " + (err.message || err));
-        } finally {
-          $("btnImport").disabled = false;
-        }
-      }
-
-      $("btnLogin").addEventListener("click", login);
-      $("btnImport").addEventListener("click", runImport);
-      $("btnDryRun").addEventListener("click", dryRun);
-      $("btnClear").addEventListener("click", () => {
-        fields.forEach(id => localStorage.removeItem("mig_" + id));
-        location.reload();
+      const latestCost = {};
+      (purchases || []).forEach(row => {
+        const cost = Number(row.avg_cost_after || row.unit_cost || 0);
+        if (cost <= 0) return;
+        if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
+        if (row.product_id && !latestCost[row.product_id]) latestCost[row.product_id] = cost;
       });
-    </script>
-  </body>
-</html>
+
+      return rows.map(row => {
+        const fallback = latestCost[row.name] || latestCost[row.id] || 0;
+        return fallback > 0 ? { ...row, avg_cost: fallback, profit_per_unit: Number(row.sale_price || 0) - fallback } : row;
+      });
+    } catch (err) {
+      console.warn("purchase cost fallback failed", err);
+      return rows;
+    }
+  }
+
+  async function getProductData() {
+    const rows = await productRows();
+    const items = rows.map(row => mapProduct(row, {}));
+    return {
+      fuels: items.filter(item => item.category === FUEL_CATEGORY),
+      products: items.filter(item => item.category !== FUEL_CATEGORY)
+    };
+  }
+
+  async function getProductListForStockIn() {
+    const data = await getProductData();
+    return [...data.fuels, ...data.products].map(item => ({ name: item.name, unit: item.unit }));
+  }
+
+  async function getProductPriceInfo() {
+    const rows = await productRows();
+    return {
+      items: rows.map(row => {
+        const item = mapProduct(row, {});
+        return { ...item, cost: moneyNumber(row.avg_cost) };
+      })
+    };
+  }
+
+  async function addProduct(form) {
+    const db = await ensureReady();
+    const { error } = await db.rpc("app_add_product", {
+      p_name: form.name,
+      p_sale_price: Number(form.salePrice || 0),
+      p_category: form.category || "สินค้า",
+      p_unit: form.unit || "ชิ้น",
+      p_image_url: form.imageUrl || null,
+      p_initial_stock: Number(form.initialStock || 0),
+      p_initial_cost: Number(form.initialCost || 0),
+      p_is_fuel: form.category === FUEL_CATEGORY || FUEL_NAMES.includes(form.name)
+    });
+    if (error) throw error;
+    return "เพิ่มสินค้าแล้ว";
+  }
+
+  async function updateProductPrices(form) {
+    const db = await ensureReady();
+    const updates = Array.isArray(form.updates) ? form.updates : [];
+    for (const item of updates) {
+      const { error } = await db.rpc("app_update_product_price", {
+        p_product_id: item.id,
+        p_new_price: Number(item.newPrice)
+      });
+      if (error) throw error;
+    }
+    return `ปรับราคาแล้ว (${updates.length} รายการ)`;
+  }
+
+  async function saveOrder(orderItems) {
+    const db = await ensureReady();
+    const items = (orderItems || []).map(item => ({
+      product_id: item.id,
+      qty: Number(item.qty || 0),
+      unit_price: Number(item.price || 0),
+      note: item.note || ""
+    }));
+    const { error } = await db.rpc("app_create_sales", { p_items: items });
+    if (error) throw error;
+    return "Success";
+  }
+
+  async function getFuelLogData() {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const { gas95, diesel } = findFuelRows(rows);
+
+    async function latestFuelLog(product) {
+      if (!product) return null;
+      async function readLatest(table, dateColumn) {
+        let query = db
+          .from(table)
+          .select(`product_id,product_name,meter_start,meter_end,${dateColumn}`)
+          .order(dateColumn, { ascending: false })
+          .limit(1);
+
+        if (product.id) {
+          const byId = await query.eq("product_id", product.id);
+          if (byId.error) throw byId.error;
+          if ((byId.data || [])[0]) return byId.data[0];
+        }
+
+        const byName = await db
+          .from(table)
+          .select(`product_id,product_name,meter_start,meter_end,${dateColumn}`)
+          .eq("product_name", product.name)
+          .order(dateColumn, { ascending: false })
+          .limit(1);
+        if (byName.error) throw byName.error;
+        return (byName.data || [])[0] || null;
+      }
+
+      return await readLatest("fuel_logs", "logged_at")
+        || await readLatest("fuel_tests", "tested_at");
+    }
+
+    const [gasLog, dieselLog] = await Promise.all([
+      latestFuelLog(gas95),
+      latestFuelLog(diesel)
+    ]);
+
+    const lastData = {
+      "ดีเซล": { meter: 0, digi: 0 },
+      "เบนซิน 95": { meter: 0, digi: 0 }
+    };
+    if (gasLog) {
+      lastData["เบนซิน 95"].meter = Number(gasLog.meter_end || 0);
+      lastData["เบนซิน 95"].digi = Number(gasLog.meter_end || 0);
+    }
+    if (dieselLog) {
+      lastData["ดีเซล"].meter = Number(dieselLog.meter_end || 0);
+      lastData["ดีเซล"].digi = Number(dieselLog.meter_end || 0);
+    }
+
+    const today = bkkDate();
+    const { data: debts, error: debtError } = await db.from("debts").select("*").gte("debt_at", `${today}T00:00:00+07:00`).lte("debt_at", `${today}T23:59:59+07:00`);
+    if (debtError) throw debtError;
+    const todayDebt = { "ดีเซล": 0, "เบนซิน 95": 0 };
+    (debts || []).forEach(row => {
+      if ((diesel && row.product_id === diesel.id) || row.product_name === (diesel && diesel.name)) todayDebt["ดีเซล"] += Number(row.qty || 0);
+      if ((gas95 && row.product_id === gas95.id) || row.product_name === (gas95 && gas95.name)) todayDebt["เบนซิน 95"] += Number(row.qty || 0);
+    });
+
+    return {
+      lastData,
+      currentPrices: {
+        "ดีเซล": moneyNumber(diesel && diesel.sale_price),
+        "เบนซิน 95": moneyNumber(gas95 && gas95.sale_price)
+      },
+      todayDebt
+    };
+  }
+
+  async function saveFuelLog(form) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const { gas95, diesel } = findFuelRows(rows);
+    const readings = [];
+    if (gas95 && form.gas95_start !== "" && form.gas95_end !== "") {
+      readings.push({
+        product_id: gas95.id,
+        meter_start: Number(form.gas95_start || 0),
+        meter_end: Number(form.gas95_end || 0),
+        unit_price: Number(form.gas95_price || gas95.sale_price || 0)
+      });
+    }
+    if (diesel && form.diesel_start !== "" && form.diesel_end !== "") {
+      readings.push({
+        product_id: diesel.id,
+        meter_start: Number(form.diesel_start || 0),
+        meter_end: Number(form.diesel_end || 0),
+        unit_price: Number(form.diesel_price || diesel.sale_price || 0)
+      });
+    }
+    const { error } = await db.rpc("app_close_fuel_shift", {
+      p_readings: readings,
+      p_actual_cash: form.actual_cash ? Number(form.actual_cash) : null,
+      p_actual_transfer: form.actual_transfer ? Number(form.actual_transfer) : null
+    });
+    if (error) throw error;
+    return "Success";
+  }
+
+  async function saveStockIn(items) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const byName = Object.fromEntries(rows.map(row => [row.name, row]));
+    const purchases = [];
+    for (const item of items || []) {
+      if (item.type === "cashExpense" || item.type === "capitalExpense") {
+        const { error } = await db.from("expenses").insert({
+          title: item.productName,
+          amount: Number(item.totalPrice || item.pricePerUnit || 0),
+          note: "จากจัดการสต็อก",
+          expense_type: item.type === "capitalExpense" ? "capital" : "expense"
+        });
+        if (error) throw error;
+        continue;
+      }
+      const product = byName[item.productName];
+      if (!product) throw new Error(`ไม่พบสินค้า: ${item.productName}`);
+      purchases.push({
+        product_id: product.id,
+        qty: Number(item.qty || 0),
+        unit_cost: Number(item.pricePerUnit || 0),
+        new_sale_price: item.salePrice ? Number(item.salePrice) : null,
+        note: ""
+      });
+    }
+    if (purchases.length) {
+      const { error } = await db.rpc("app_create_purchase", { p_items: purchases });
+      if (error) throw error;
+    }
+    return "บันทึกรับสินค้าแล้ว";
+  }
+
+  async function getDebtPageData() {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const products = rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      price: moneyNumber(row.sale_price),
+      category: isFuelProduct(row) ? FUEL_CATEGORY : row.category,
+      unit: row.unit
+    }));
+    const { data: unpaid, error } = await db.from("debts").select("*").in("status", ["unpaid", "partial"]).order("debt_at", { ascending: true });
+    if (error) throw error;
+    const debtors = [...new Set((unpaid || []).map(row => row.customer_name))].sort();
+    return {
+      products,
+      debtors,
+      unpaid: (unpaid || []).map(row => ({
+        rowIndex: row.id,
+        date: thaiDate(row.debt_at),
+        customer: row.customer_name,
+        product: row.product_name,
+        qty: Number(row.qty || 0),
+        amount: Number(row.amount || 0),
+        filler: row.filler_name || ""
+      }))
+    };
+  }
+
+  async function saveDebtTransaction(form) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const product = rows.find(row => row.name === form.productName);
+    if (!product) throw new Error(`ไม่พบสินค้า: ${form.productName}`);
+    const { error } = await db.rpc("app_create_debt", {
+      p_customer_name: form.customerName,
+      p_product_id: product.id,
+      p_qty: form.qty ? Number(form.qty) : null,
+      p_amount: form.totalPrice ? Number(form.totalPrice) : null,
+      p_filler_name: form.fillerName || null,
+      p_note: null
+    });
+    if (error) throw error;
+    return "บันทึกหนี้แล้ว";
+  }
+
+  async function clearDebtByCustomer(customerName) {
+    const db = await ensureReady();
+    const { error } = await db.rpc("app_receive_debt_payment", {
+      p_customer_name: customerName,
+      p_amount: await unpaidAmountFor(customerName),
+      p_note: "clear"
+    });
+    if (error) throw error;
+    return "เคลียร์แล้ว";
+  }
+
+  async function unpaidAmountFor(customerName) {
+    const db = await ensureReady();
+    const { data, error } = await db.from("debts").select("amount").eq("customer_name", customerName).in("status", ["unpaid", "partial"]);
+    if (error) throw error;
+    return (data || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  }
+
+  async function receiveDebtPayment(form) {
+    const db = await ensureReady();
+    const { error } = await db.rpc("app_receive_debt_payment", {
+      p_customer_name: form.customerName,
+      p_amount: Number(form.amount || 0),
+      p_note: form.note || null
+    });
+    if (error) throw error;
+    return "รับชำระแล้ว";
+  }
+
+  async function saveGeneralExpense(form) {
+    const db = await ensureReady();
+    const { error } = await db.from("expenses").insert({
+      title: form.title,
+      amount: Number(form.amount || 0),
+      note: form.note || null,
+      expense_type: form.type === "bank" ? "bank" : "expense"
+    });
+    if (error) throw error;
+    return "บันทึกแล้ว";
+  }
+
+  async function getDashboardData(period = "day", customDate = null, dateRange = null) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const productByName = Object.fromEntries(rows.map(row => [row.name, row]));
+    let from = bkkDate();
+    let to = bkkDate();
+    if (period === "month") {
+      const base = customDate ? new Date(customDate) : new Date();
+      const y = base.getFullYear();
+      const m = base.getMonth();
+      from = new Date(y, m, 1).toISOString().slice(0, 10);
+      to = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+    } else if (period === "range" && dateRange) {
+      from = dateRange.from;
+      to = dateRange.to;
+    } else if (customDate) {
+      from = customDate;
+      to = customDate;
+    }
+
+    const start = `${from}T00:00:00+07:00`;
+    const end = `${to}T23:59:59+07:00`;
+    const [salesRes, expensesRes, debtsRes, paymentsRes, testsRes] = await Promise.all([
+      db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
+      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
+      db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
+      db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
+      db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end)
+    ]);
+    for (const res of [salesRes, expensesRes, debtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
+
+    const sales = salesRes.data || [];
+    const expenses = expensesRes.data || [];
+    const debts = debtsRes.data || [];
+    const payments = paymentsRes.data || [];
+    const tests = testsRes.data || [];
+
+    const salesList = sales.map(row => {
+      const product = productByName[row.product_name] || {};
+      const cost = Number(product.avg_cost || 0);
+      const qty = Number(row.qty || 0);
+      const total = Number(row.total || row.unit_price * qty || 0);
+      return {
+        name: row.product_name,
+        day: bkkDate(row.sold_at),
+        qty,
+        unit: row.unit,
+        total,
+        costTotal: cost * qty,
+        profit: total - (cost * qty),
+        profitPerUnit: Number(row.unit_price || 0) - cost
+      };
+    });
+
+    const expenseList = expenses.map(row => ({
+      title: row.title,
+      amount: Number(row.amount || 0),
+      type: row.expense_type === "capital" ? "stock" : "general",
+      day: bkkDate(row.spent_at)
+    }));
+    const debtList = debts.map(row => ({
+      customer: row.customer_name,
+      item: row.product_name,
+      qty: Number(row.qty || 0),
+      unit: (productByName[row.product_name] || {}).unit || "",
+      amount: Number(row.amount || 0)
+    }));
+    const repayList = payments.map(row => ({
+      customer: row.customer_name,
+      debtDate: thaiDate(row.paid_at),
+      amount: Number(row.amount || 0)
+    }));
+    const fuelTests = tests.map(row => ({
+      type: row.product_name,
+      time: thaiTime(row.tested_at),
+      qty: Number(row.qty || 0)
+    }));
+
+    const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
+    const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
+    const totalDebt = debtList.reduce((sum, row) => sum + row.amount, 0);
+    const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
+    const profit = salesList.reduce((sum, row) => sum + row.profit, 0);
+    const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
+    const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
+    const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
+    const ledgerBalances = await getArchiveBalances(to);
+    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
+    const capitalBalance = ledgerBalances.capital !== null
+      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
+      : capitalReturned - stockPaid;
+    const profitBalance = ledgerBalances.profit !== null
+      ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
+      : profit - generalExpenses;
+
+    return {
+      summary: {
+        sales: totalSales,
+        expenses: totalExpenses,
+        debt: totalDebt,
+        cash: totalSales + debtRepaid - totalExpenses,
+        profit,
+        netProfit: profit - generalExpenses,
+        actualReceived: totalSales + debtRepaid,
+        grocery: 0,
+        stockPaid,
+        debtRepaid,
+        capitalReturned,
+        capitalNet: capitalReturned - stockPaid,
+        capitalBalance,
+        profitBalance,
+        openingCapitalBalance: ledgerBalances.capital,
+        openingProfitBalance: ledgerBalances.profit,
+        balanceDeltaCapitalReturned: balanceDeltas.capitalReturned,
+        balanceDeltaStockPaid: balanceDeltas.stockPaid,
+        balanceDeltaProfit: balanceDeltas.profit,
+        balanceDeltaGeneralExpenses: balanceDeltas.generalExpenses,
+        generalExpenses
+      },
+      prices: {
+        "เบนซิน 95": Number((productByName["เบนซิน 95"] || {}).sale_price || 0),
+        "ดีเซล": Number((productByName["ดีเซล"] || {}).sale_price || 0)
+      },
+      lists: {
+        sales: salesList,
+        expenses: expenseList,
+        capital: expenseList.filter(row => row.type === "stock"),
+        debts: debtList,
+        repayments: repayList,
+        fuelTests
+      },
+      chart: {
+        labels: [from === to ? thaiDate(from) : `${from} - ${to}`],
+        data: {
+          sales: [totalSales],
+          cash: [totalSales + debtRepaid - totalExpenses],
+          profit: [profit - generalExpenses]
+        }
+      },
+      monthlyOilSummary: {
+        profitItems: salesList,
+        profitDays: [],
+        repayments: repayList,
+        debts: debtList,
+        payments: expenseList,
+        sales: { fuel: [], engineOil: [] }
+      }
+    };
+  }
+
+  async function getArchiveBalances(toDate) {
+    const db = await ensureReady();
+    const result = { capital: null, profit: null, capitalDate: null, profitDate: null };
+
+    const readLedgerType = async (ledgerType, useDateFilter) => {
+      let query = db
+        .from("money_ledger")
+        .select("ledger_type,entry_date,balance_amount")
+        .eq("ledger_type", ledgerType)
+        .order("entry_date", { ascending: false })
+        .limit(1);
+      if (useDateFilter && toDate) query = query.lte("entry_date", toDate);
+      const { data, error } = await query;
+      if (error) throw error;
+      const row = (data || [])[0];
+      if (!row) return;
+      if (ledgerType === "capital") {
+        result.capital = Number(row.balance_amount || 0);
+        result.capitalDate = row.entry_date;
+      }
+      if (ledgerType === "profit") {
+        result.profit = Number(row.balance_amount || 0);
+        result.profitDate = row.entry_date;
+      }
+    };
+
+    try {
+      await Promise.all([readLedgerType("capital", true), readLedgerType("profit", true)]);
+      if (result.capital === null) await readLedgerType("capital", false);
+      if (result.profit === null) await readLedgerType("profit", false);
+    } catch (err) {
+      if (!String(err.message || "").includes("money_ledger")) {
+        console.warn("money_ledger balance lookup failed", err);
+      }
+    }
+
+    if (result.capital !== null && result.profit !== null) return result;
+
+    const applyDailySummary = row => {
+      if (!row) return;
+      if (result.capital === null) {
+        result.capital = Number(row.capital_balance || 0);
+        result.capitalDate = row.summary_date;
+      }
+      if (result.profit === null) {
+        result.profit = Number(row.profit || 0);
+        result.profitDate = row.summary_date;
+      }
+    };
+
+    const readDailySummary = async useDateFilter => {
+      let query = db
+        .from("daily_summaries")
+        .select("summary_date,capital_balance,profit")
+        .order("summary_date", { ascending: false })
+        .limit(1);
+      if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
+      const { data, error } = await query;
+      if (error) throw error;
+      applyDailySummary((data || [])[0]);
+    };
+
+    try {
+      await readDailySummary(true);
+      if (result.capital === null || result.profit === null) await readDailySummary(false);
+    } catch (err) {
+      if (!String(err.message || "").includes("daily_summaries")) {
+        console.warn("daily_summaries balance lookup failed", err);
+      }
+    }
+
+    return result;
+  }
+
+  async function getBalanceDeltas(db, productByName, ledgerBalances, toDate) {
+    const result = { capitalReturned: 0, stockPaid: 0, profit: 0, generalExpenses: 0 };
+    const startDates = [ledgerBalances.capitalDate, ledgerBalances.profitDate]
+      .filter(Boolean)
+      .map(date => addDays(date, 1));
+    if (startDates.length === 0) return result;
+
+    const fromDate = startDates.sort()[0];
+    if (fromDate > toDate) return result;
+
+    const start = `${fromDate}T00:00:00+07:00`;
+    const end = `${toDate}T23:59:59+07:00`;
+    const [salesRes, expensesRes] = await Promise.all([
+      db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
+      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end)
+    ]);
+    if (salesRes.error) throw salesRes.error;
+    if (expensesRes.error) throw expensesRes.error;
+
+    const capitalStart = ledgerBalances.capitalDate ? addDays(ledgerBalances.capitalDate, 1) : fromDate;
+    const profitStart = ledgerBalances.profitDate ? addDays(ledgerBalances.profitDate, 1) : fromDate;
+
+    (salesRes.data || []).forEach(row => {
+      const day = bkkDate(row.sold_at);
+      const product = productByName[row.product_name] || {};
+      const qty = Number(row.qty || 0);
+      const total = Number(row.total || row.unit_price * qty || 0);
+      const costTotal = Number(product.avg_cost || 0) * qty;
+      if (day >= capitalStart) result.capitalReturned += costTotal;
+      if (day >= profitStart) result.profit += total - costTotal;
+    });
+
+    (expensesRes.data || []).forEach(row => {
+      const day = bkkDate(row.spent_at);
+      const amount = Number(row.amount || 0);
+      if (row.expense_type === "capital") {
+        if (day >= capitalStart) result.stockPaid += amount;
+      } else if (day >= profitStart) {
+        result.generalExpenses += amount;
+      }
+    });
+
+    return result;
+  }
+
+  async function getOilPriceInfo() {
+    const rows = await productRows();
+    const byName = Object.fromEntries(rows.map(row => [row.name, row]));
+    return {
+      prices: {
+        "เบนซิน 95": Number((byName["เบนซิน 95"] || {}).sale_price || 0),
+        "ดีเซล": Number((byName["ดีเซล"] || {}).sale_price || 0)
+      },
+      costs: {
+        "เบนซิน 95": Number((byName["เบนซิน 95"] || {}).avg_cost || 0),
+        "ดีเซล": Number((byName["ดีเซล"] || {}).avg_cost || 0)
+      }
+    };
+  }
+
+  async function updateOilPrices(form) {
+    const rows = await productRows();
+    const updates = [];
+    const byName = Object.fromEntries(rows.map(row => [row.name, row]));
+    if (byName["เบนซิน 95"] && form.new_gas95) updates.push({ id: byName["เบนซิน 95"].id, newPrice: Number(form.new_gas95) });
+    if (byName["ดีเซล"] && form.new_diesel) updates.push({ id: byName["ดีเซล"].id, newPrice: Number(form.new_diesel) });
+    return updateProductPrices({ updates });
+  }
+
+  async function saveFuelTest(form) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const product = rows.find(row => row.name === form.fuelType);
+    if (!product) throw new Error("ไม่พบน้ำมัน");
+    const { error } = await db.rpc("app_save_fuel_test", {
+      p_product_id: product.id,
+      p_meter_start: Number(form.meterStart || 0),
+      p_meter_end: Number(form.meterEnd || 0),
+      p_note: form.note || null
+    });
+    if (error) throw error;
+    return "บันทึกทดสอบน้ำมันแล้ว";
+  }
+
+  async function getFuelTestHistory() {
+    const db = await ensureReady();
+    const today = bkkDate();
+    const { data, error } = await db.from("fuel_tests").select("*").gte("tested_at", `${today}T00:00:00+07:00`).lte("tested_at", `${today}T23:59:59+07:00`).order("tested_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      rowIndex: row.id,
+      time: thaiTime(row.tested_at),
+      type: row.product_name,
+      meterStart: Number(row.meter_start || 0),
+      meterEnd: Number(row.meter_end || 0),
+      qty: Number(row.qty || 0),
+      note: row.note || "",
+      rawDate: thaiDate(row.tested_at)
+    }));
+  }
+
+  async function getRecentHistory(type) {
+    const db = await ensureReady();
+    const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : "sales";
+    const dateCol = table === "expenses" ? "spent_at" : table === "purchases" ? "purchased_at" : table === "debts" ? "debt_at" : "sold_at";
+    const today = bkkDate();
+    const { data, error } = await db
+      .from(table)
+      .select("*")
+      .gte(dateCol, `${today}T00:00:00+07:00`)
+      .lte(dateCol, `${today}T23:59:59+07:00`)
+      .order(dateCol, { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return (data || []).map(row => {
+      if (table === "expenses") return { rowIndex: row.id, data: [thaiDate(row.spent_at), row.title, row.amount, row.amount, row.note || ""] };
+      if (table === "purchases") return { rowIndex: row.id, data: [thaiDate(row.purchased_at), row.product_name, row.unit_cost, row.qty, row.unit, row.total, row.avg_cost_after] };
+      if (table === "debts") return { rowIndex: row.id, data: [thaiDate(row.debt_at), row.customer_name, row.product_name, row.qty, row.amount, row.filler_name || ""] };
+      return { rowIndex: row.id, data: [thaiDate(row.sold_at), row.product_name, row.unit_price, row.qty, row.unit, row.total, row.note || ""] };
+    });
+  }
+
+  async function updateHistoryRow() {
+    return "ยังไม่รองรับแก้ไขในโหมด Supabase";
+  }
+
+  async function deleteHistoryRow(type, rowIndex) {
+    const db = await ensureReady();
+    const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
+    const { error } = await db.from(table).delete().eq("id", rowIndex);
+    if (error) throw error;
+    return "ลบแล้ว";
+  }
+
+  async function recalculateFuelStockFromSheets() {
+    return "โหมด Supabase ใช้ stock_qty ในตาราง products";
+  }
+
+  async function DailyReportToLineFlex() {
+    return "ยังไม่ได้ตั้ง LINE ในโหมด Supabase";
+  }
+
+  const api = {
+    getProductData,
+    getProductListForStockIn,
+    getProductPriceInfo,
+    addProduct,
+    updateProductPrices,
+    saveOrder,
+    getFuelLogData,
+    saveFuelLog,
+    saveStockIn,
+    getDebtPageData,
+    saveDebtTransaction,
+    clearDebtByCustomer,
+    receiveDebtPayment,
+    saveGeneralExpense,
+    getDashboardData,
+    getOilPriceInfo,
+    updateOilPrices,
+    saveFuelTest,
+    getFuelTestHistory,
+    getRecentHistory,
+    updateHistoryRow,
+    deleteHistoryRow,
+    recalculateFuelStockFromSheets,
+    DailyReportToLineFlex
+  };
+
+  function runner(success, failure) {
+    return new Proxy({}, {
+      get(_target, prop) {
+        if (prop === "withSuccessHandler") return cb => runner(cb, failure);
+        if (prop === "withFailureHandler") return cb => runner(success, cb);
+        return (...args) => {
+          Promise.resolve()
+            .then(() => {
+              if (!api[prop]) throw new Error(`ยังไม่รองรับฟังก์ชัน ${String(prop)}`);
+              return api[prop](...args);
+            })
+            .then(result => {
+              if (success) success(result);
+            })
+            .catch(err => {
+              if (failure) failure(err);
+              else console.error(err);
+            });
+        };
+      }
+    });
+  }
+
+  async function debugArchiveBalances(toDate = bkkDate()) {
+    const db = await ensureReady();
+    const [capital, profit, balances] = await Promise.all([
+      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "capital").order("entry_date", { ascending: false }).limit(3),
+      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "profit").order("entry_date", { ascending: false }).limit(3),
+      getArchiveBalances(toDate)
+    ]);
+    return {
+      version: window.POS_SUPABASE_ADAPTER_VERSION,
+      toDate,
+      balances,
+      capitalRows: capital.data || [],
+      capitalError: capital.error && capital.error.message,
+      profitRows: profit.data || [],
+      profitError: profit.error && profit.error.message
+    };
+  }
+
+  async function debugFuelLogData() {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const fuels = findFuelRows(rows);
+    const latest = await getFuelLogData();
+    const recentLogs = await db
+      .from("fuel_logs")
+      .select("product_id,product_name,meter_start,meter_end,qty,logged_at")
+      .order("logged_at", { ascending: false })
+      .limit(10);
+    const recentTests = await db
+      .from("fuel_tests")
+      .select("product_id,product_name,meter_start,meter_end,qty,tested_at")
+      .order("tested_at", { ascending: false })
+      .limit(10);
+    return {
+      version: window.POS_SUPABASE_ADAPTER_VERSION,
+      detectedFuels: fuels,
+      lastData: latest.lastData,
+      currentPrices: latest.currentPrices,
+      recentLogs: recentLogs.data || [],
+      recentLogsError: recentLogs.error && recentLogs.error.message,
+      recentTests: recentTests.data || [],
+      recentTestsError: recentTests.error && recentTests.error.message
+    };
+  }
+
+  window.google = { script: { run: runner() } };
+  window.posSupabaseAdapter = { initAuth, showLogin, debugArchiveBalances, debugFuelLogData };
+  document.addEventListener("DOMContentLoaded", initAuth);
+})();
