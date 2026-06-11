@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-ledger-v5";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-fuel-log-v6";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -54,6 +54,18 @@
 
   function isFuelProduct(row) {
     return row.is_fuel || FUEL_NAMES.includes(row.name);
+  }
+
+  function findFuelRows(rows) {
+    const fuelRows = (rows || []).filter(isFuelProduct);
+    const gas95 = fuelRows.find(row => String(row.name || "").includes("95"))
+      || fuelRows.find(row => /gas|benz|เบนซิน|แก๊ส/i.test(String(row.name || "")))
+      || fuelRows[0]
+      || null;
+    const diesel = fuelRows.find(row => row.id !== (gas95 && gas95.id) && /diesel|ดีเซล/i.test(String(row.name || "")))
+      || fuelRows.find(row => row.id !== (gas95 && gas95.id))
+      || null;
+    return { gas95, diesel };
   }
 
   function mapProduct(row, soldRankMap) {
@@ -256,36 +268,64 @@
   async function getFuelLogData() {
     const db = await ensureReady();
     const rows = await productRows();
-    const fuelMap = {};
-    rows.filter(isFuelProduct).forEach(row => fuelMap[row.name] = row);
+    const { gas95, diesel } = findFuelRows(rows);
 
-    const { data: logs, error } = await db.from("fuel_logs").select("*").order("logged_at", { ascending: false }).limit(100);
-    if (error) throw error;
+    async function latestFuelLog(product) {
+      if (!product) return null;
+      let query = db
+        .from("fuel_logs")
+        .select("product_id,product_name,meter_start,meter_end,logged_at")
+        .order("logged_at", { ascending: false })
+        .limit(1);
+
+      if (product.id) {
+        const byId = await query.eq("product_id", product.id);
+        if (byId.error) throw byId.error;
+        if ((byId.data || [])[0]) return byId.data[0];
+      }
+
+      const byName = await db
+        .from("fuel_logs")
+        .select("product_id,product_name,meter_start,meter_end,logged_at")
+        .eq("product_name", product.name)
+        .order("logged_at", { ascending: false })
+        .limit(1);
+      if (byName.error) throw byName.error;
+      return (byName.data || [])[0] || null;
+    }
+
+    const [gasLog, dieselLog] = await Promise.all([
+      latestFuelLog(gas95),
+      latestFuelLog(diesel)
+    ]);
 
     const lastData = {
       "ดีเซล": { meter: 0, digi: 0 },
       "เบนซิน 95": { meter: 0, digi: 0 }
     };
-    (logs || []).forEach(row => {
-      if (lastData[row.product_name] && !lastData[row.product_name].meter) {
-        lastData[row.product_name].meter = Number(row.meter_end || 0);
-        lastData[row.product_name].digi = Number(row.meter_end || 0);
-      }
-    });
+    if (gasLog) {
+      lastData["เบนซิน 95"].meter = Number(gasLog.meter_end || 0);
+      lastData["เบนซิน 95"].digi = Number(gasLog.meter_end || 0);
+    }
+    if (dieselLog) {
+      lastData["ดีเซล"].meter = Number(dieselLog.meter_end || 0);
+      lastData["ดีเซล"].digi = Number(dieselLog.meter_end || 0);
+    }
 
     const today = bkkDate();
     const { data: debts, error: debtError } = await db.from("debts").select("*").gte("debt_at", `${today}T00:00:00+07:00`).lte("debt_at", `${today}T23:59:59+07:00`);
     if (debtError) throw debtError;
     const todayDebt = { "ดีเซล": 0, "เบนซิน 95": 0 };
     (debts || []).forEach(row => {
-      if (todayDebt[row.product_name] !== undefined) todayDebt[row.product_name] += Number(row.qty || 0);
+      if ((diesel && row.product_id === diesel.id) || row.product_name === (diesel && diesel.name)) todayDebt["ดีเซล"] += Number(row.qty || 0);
+      if ((gas95 && row.product_id === gas95.id) || row.product_name === (gas95 && gas95.name)) todayDebt["เบนซิน 95"] += Number(row.qty || 0);
     });
 
     return {
       lastData,
       currentPrices: {
-        "ดีเซล": moneyNumber(fuelMap["ดีเซล"] && fuelMap["ดีเซล"].sale_price),
-        "เบนซิน 95": moneyNumber(fuelMap["เบนซิน 95"] && fuelMap["เบนซิน 95"].sale_price)
+        "ดีเซล": moneyNumber(diesel && diesel.sale_price),
+        "เบนซิน 95": moneyNumber(gas95 && gas95.sale_price)
       },
       todayDebt
     };
@@ -294,22 +334,22 @@
   async function saveFuelLog(form) {
     const db = await ensureReady();
     const rows = await productRows();
-    const byName = Object.fromEntries(rows.map(row => [row.name, row]));
+    const { gas95, diesel } = findFuelRows(rows);
     const readings = [];
-    if (form.gas95_start !== "" && form.gas95_end !== "") {
+    if (gas95 && form.gas95_start !== "" && form.gas95_end !== "") {
       readings.push({
-        product_id: byName["เบนซิน 95"].id,
+        product_id: gas95.id,
         meter_start: Number(form.gas95_start || 0),
         meter_end: Number(form.gas95_end || 0),
-        unit_price: Number(form.gas95_price || byName["เบนซิน 95"].sale_price || 0)
+        unit_price: Number(form.gas95_price || gas95.sale_price || 0)
       });
     }
-    if (form.diesel_start !== "" && form.diesel_end !== "") {
+    if (diesel && form.diesel_start !== "" && form.diesel_end !== "") {
       readings.push({
-        product_id: byName["ดีเซล"].id,
+        product_id: diesel.id,
         meter_start: Number(form.diesel_start || 0),
         meter_end: Number(form.diesel_end || 0),
-        unit_price: Number(form.diesel_price || byName["ดีเซล"].sale_price || 0)
+        unit_price: Number(form.diesel_price || diesel.sale_price || 0)
       });
     }
     const { error } = await db.rpc("app_close_fuel_shift", {
@@ -795,7 +835,27 @@
     };
   }
 
+  async function debugFuelLogData() {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const fuels = findFuelRows(rows);
+    const latest = await getFuelLogData();
+    const recentLogs = await db
+      .from("fuel_logs")
+      .select("product_id,product_name,meter_start,meter_end,qty,logged_at")
+      .order("logged_at", { ascending: false })
+      .limit(10);
+    return {
+      version: window.POS_SUPABASE_ADAPTER_VERSION,
+      detectedFuels: fuels,
+      lastData: latest.lastData,
+      currentPrices: latest.currentPrices,
+      recentLogs: recentLogs.data || [],
+      recentLogsError: recentLogs.error && recentLogs.error.message
+    };
+  }
+
   window.google = { script: { run: runner() } };
-  window.posSupabaseAdapter = { initAuth, showLogin, debugArchiveBalances };
+  window.posSupabaseAdapter = { initAuth, showLogin, debugArchiveBalances, debugFuelLogData };
   document.addEventListener("DOMContentLoaded", initAuth);
 })();
