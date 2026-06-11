@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-latest-cost-v10";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-valid-purchase-cost-v11";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -208,13 +208,16 @@
     try {
       const { data: purchases, error: purchaseError } = await db
         .from("purchases")
-        .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at")
+        .select("product_id,product_name,unit_cost,avg_cost_after,purchased_at,created_at")
         .order("purchased_at", { ascending: false })
         .limit(5000);
       if (purchaseError) throw purchaseError;
 
       const latestCost = {};
       (purchases || []).forEach(row => {
+        const purchasedAt = new Date(row.purchased_at).getTime();
+        const createdAt = new Date(row.created_at).getTime();
+        if (Number.isFinite(purchasedAt) && Number.isFinite(createdAt) && Math.abs(purchasedAt - createdAt) <= 3600 * 1000) return;
         const cost = Number(row.avg_cost_after || row.unit_cost || 0);
         if (cost <= 0) return;
         if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
