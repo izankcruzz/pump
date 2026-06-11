@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-daily-capital-v13";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-nonzero-capital-v14";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -677,6 +677,7 @@
       let query = db
         .from("daily_summaries")
         .select("summary_date,capital_balance")
+        .neq("capital_balance", 0)
         .order("summary_date", { ascending: false })
         .limit(1);
       if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
