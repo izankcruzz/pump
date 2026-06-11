@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-ledger-v4";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-ledger-v5";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -579,28 +579,26 @@
     const db = await ensureReady();
     const result = { capital: null, profit: null };
 
-    const applyLedgerRows = rows => {
-      (rows || []).forEach(row => {
-        if (row.ledger_type === "capital" && result.capital === null) result.capital = Number(row.balance_amount || 0);
-        if (row.ledger_type === "profit" && result.profit === null) result.profit = Number(row.balance_amount || 0);
-      });
-    };
-
-    const readMoneyLedger = async useDateFilter => {
+    const readLedgerType = async (ledgerType, useDateFilter) => {
       let query = db
         .from("money_ledger")
         .select("ledger_type,entry_date,balance_amount")
+        .eq("ledger_type", ledgerType)
         .order("entry_date", { ascending: false })
-        .limit(500);
+        .limit(1);
       if (useDateFilter && toDate) query = query.lte("entry_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
-      applyLedgerRows(data);
+      const row = (data || [])[0];
+      if (!row) return;
+      if (ledgerType === "capital") result.capital = Number(row.balance_amount || 0);
+      if (ledgerType === "profit") result.profit = Number(row.balance_amount || 0);
     };
 
     try {
-      await readMoneyLedger(true);
-      if (result.capital === null || result.profit === null) await readMoneyLedger(false);
+      await Promise.all([readLedgerType("capital", true), readLedgerType("profit", true)]);
+      if (result.capital === null) await readLedgerType("capital", false);
+      if (result.profit === null) await readLedgerType("profit", false);
     } catch (err) {
       if (!String(err.message || "").includes("money_ledger")) {
         console.warn("money_ledger balance lookup failed", err);
@@ -779,7 +777,25 @@
     });
   }
 
+  async function debugArchiveBalances(toDate = bkkDate()) {
+    const db = await ensureReady();
+    const [capital, profit, balances] = await Promise.all([
+      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "capital").order("entry_date", { ascending: false }).limit(3),
+      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "profit").order("entry_date", { ascending: false }).limit(3),
+      getArchiveBalances(toDate)
+    ]);
+    return {
+      version: window.POS_SUPABASE_ADAPTER_VERSION,
+      toDate,
+      balances,
+      capitalRows: capital.data || [],
+      capitalError: capital.error && capital.error.message,
+      profitRows: profit.data || [],
+      profitError: profit.error && profit.error.message
+    };
+  }
+
   window.google = { script: { run: runner() } };
-  window.posSupabaseAdapter = { initAuth, showLogin };
+  window.posSupabaseAdapter = { initAuth, showLogin, debugArchiveBalances };
   document.addEventListener("DOMContentLoaded", initAuth);
 })();
