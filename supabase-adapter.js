@@ -521,7 +521,7 @@
     const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
-    const ledgerBalances = await getLedgerBalances(to);
+    const ledgerBalances = await getArchiveBalances(to);
 
     return {
       summary: {
@@ -572,7 +572,7 @@
     };
   }
 
-  async function getLedgerBalances(toDate) {
+  async function getArchiveBalances(toDate) {
     const db = await ensureReady();
     const result = { capital: null, profit: null };
     try {
@@ -590,11 +590,33 @@
         if (row.ledger_type === "capital" && result.capital === null) result.capital = Number(row.balance_amount || 0);
         if (row.ledger_type === "profit" && result.profit === null) result.profit = Number(row.balance_amount || 0);
       });
-      return result;
     } catch (err) {
       console.warn("money_ledger balance lookup failed", err);
-      return result;
     }
+
+    if (result.capital !== null && result.profit !== null) return result;
+
+    try {
+      const { data, error } = await db
+        .from("daily_summaries")
+        .select("summary_date,capital_balance,profit")
+        .lte("summary_date", toDate)
+        .order("summary_date", { ascending: false })
+        .limit(1);
+      if (error) {
+        if (String(error.message || "").includes("daily_summaries")) return result;
+        throw error;
+      }
+      const row = (data || [])[0];
+      if (row) {
+        if (result.capital === null) result.capital = Number(row.capital_balance || 0);
+        if (result.profit === null) result.profit = Number(row.profit || 0);
+      }
+    } catch (err) {
+      console.warn("daily_summaries balance lookup failed", err);
+    }
+
+    return result;
   }
 
   async function getOilPriceInfo() {
