@@ -1,4 +1,7 @@
 (function () {
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-ledger-v4";
+  console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
+
   const STORAGE_URL = "POS_SUPABASE_URL";
   const STORAGE_KEY = "POS_SUPABASE_ANON_KEY";
   const FUEL_CATEGORY = "น้ำมันเชื้อเพลิง";
@@ -575,45 +578,62 @@
   async function getArchiveBalances(toDate) {
     const db = await ensureReady();
     const result = { capital: null, profit: null };
-    try {
-      const { data, error } = await db
-        .from("money_ledger")
-        .select("ledger_type,entry_date,balance_amount")
-        .lte("entry_date", toDate)
-        .order("entry_date", { ascending: false })
-        .limit(200);
-      if (error) {
-        if (String(error.message || "").includes("money_ledger")) return result;
-        throw error;
-      }
-      (data || []).forEach(row => {
+
+    const applyLedgerRows = rows => {
+      (rows || []).forEach(row => {
         if (row.ledger_type === "capital" && result.capital === null) result.capital = Number(row.balance_amount || 0);
         if (row.ledger_type === "profit" && result.profit === null) result.profit = Number(row.balance_amount || 0);
       });
+    };
+
+    const readMoneyLedger = async useDateFilter => {
+      let query = db
+        .from("money_ledger")
+        .select("ledger_type,entry_date,balance_amount")
+        .order("entry_date", { ascending: false })
+        .limit(500);
+      if (useDateFilter && toDate) query = query.lte("entry_date", toDate);
+      const { data, error } = await query;
+      if (error) throw error;
+      applyLedgerRows(data);
+    };
+
+    try {
+      await readMoneyLedger(true);
+      if (result.capital === null || result.profit === null) await readMoneyLedger(false);
     } catch (err) {
-      console.warn("money_ledger balance lookup failed", err);
+      if (!String(err.message || "").includes("money_ledger")) {
+        console.warn("money_ledger balance lookup failed", err);
+      }
     }
 
     if (result.capital !== null && result.profit !== null) return result;
 
-    try {
-      const { data, error } = await db
+    const applyDailySummary = row => {
+      if (!row) return;
+      if (result.capital === null) result.capital = Number(row.capital_balance || 0);
+      if (result.profit === null) result.profit = Number(row.profit || 0);
+    };
+
+    const readDailySummary = async useDateFilter => {
+      let query = db
         .from("daily_summaries")
         .select("summary_date,capital_balance,profit")
-        .lte("summary_date", toDate)
         .order("summary_date", { ascending: false })
         .limit(1);
-      if (error) {
-        if (String(error.message || "").includes("daily_summaries")) return result;
-        throw error;
-      }
-      const row = (data || [])[0];
-      if (row) {
-        if (result.capital === null) result.capital = Number(row.capital_balance || 0);
-        if (result.profit === null) result.profit = Number(row.profit || 0);
-      }
+      if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
+      const { data, error } = await query;
+      if (error) throw error;
+      applyDailySummary((data || [])[0]);
+    };
+
+    try {
+      await readDailySummary(true);
+      if (result.capital === null || result.profit === null) await readDailySummary(false);
     } catch (err) {
-      console.warn("daily_summaries balance lookup failed", err);
+      if (!String(err.message || "").includes("daily_summaries")) {
+        console.warn("daily_summaries balance lookup failed", err);
+      }
     }
 
     return result;
