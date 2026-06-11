@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-cost-balance-v9";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-latest-cost-v10";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -204,7 +204,6 @@
     const { data, error } = await db.from("v_product_stock").select("*").order("is_fuel", { ascending: false }).order("name");
     if (error) throw error;
     const rows = data || [];
-    if (!rows.some(row => Number(row.avg_cost || 0) <= 0)) return rows;
 
     try {
       const { data: purchases, error: purchaseError } = await db
@@ -218,14 +217,12 @@
       (purchases || []).forEach(row => {
         const cost = Number(row.avg_cost_after || row.unit_cost || 0);
         if (cost <= 0) return;
-        if (row.product_id && !latestCost[row.product_id]) latestCost[row.product_id] = cost;
         if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
+        if (row.product_id && !latestCost[row.product_id]) latestCost[row.product_id] = cost;
       });
 
       return rows.map(row => {
-        const current = Number(row.avg_cost || 0);
-        if (current > 0) return row;
-        const fallback = latestCost[row.id] || latestCost[row.name] || 0;
+        const fallback = latestCost[row.name] || latestCost[row.id] || 0;
         return fallback > 0 ? { ...row, avg_cost: fallback, profit_per_unit: Number(row.sale_price || 0) - fallback } : row;
       });
     } catch (err) {
