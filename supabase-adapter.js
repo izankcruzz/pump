@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-valid-purchase-cost-v11";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-balance-v12";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -607,12 +607,11 @@
     const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
     const ledgerBalances = await getArchiveBalances(to);
-    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
     const capitalBalance = ledgerBalances.capital !== null
-      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
+      ? ledgerBalances.capital
       : capitalReturned - stockPaid;
     const profitBalance = ledgerBalances.profit !== null
-      ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
+      ? ledgerBalances.profit
       : profit - generalExpenses;
 
     return {
@@ -633,10 +632,10 @@
         profitBalance,
         openingCapitalBalance: ledgerBalances.capital,
         openingProfitBalance: ledgerBalances.profit,
-        balanceDeltaCapitalReturned: balanceDeltas.capitalReturned,
-        balanceDeltaStockPaid: balanceDeltas.stockPaid,
-        balanceDeltaProfit: balanceDeltas.profit,
-        balanceDeltaGeneralExpenses: balanceDeltas.generalExpenses,
+        balanceDeltaCapitalReturned: 0,
+        balanceDeltaStockPaid: 0,
+        balanceDeltaProfit: 0,
+        balanceDeltaGeneralExpenses: 0,
         generalExpenses
       },
       prices: {
