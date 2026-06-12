@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-balance-visual-v54";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-rounding-v55";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
