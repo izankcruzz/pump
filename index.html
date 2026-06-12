@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-copyable-report-v49"></script>
+    <script src="./supabase-adapter.js?v=20260612-line-text-report-v50"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -470,7 +470,7 @@
                             <h3 class="font-bold text-slate-700 text-lg" id="daily-list-title">รายการวันนี้</h3>
                             <button onclick="sendLineReport()" id="btn-send-line"
                                 class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"><i
-                                    class="fa-solid fa-copy text-sm"></i> สรุป/คัดลอก</button>
+                                    class="fa-brands fa-line text-sm"></i> ส่งไลน์</button>
                         </div>
                         <div class="flex-1 overflow-y-auto p-4 space-y-5" id="daily-summary-container">
                             <div class="group">
@@ -1641,6 +1641,7 @@
         let latestDashboardData = null;
         let latestDashboardLabel = '';
         let latestReportText = '';
+        const LINE_PUSH_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxq86EbTMwoVjZwrlzR4g5HRnE-kI_6_nXUGOnuIuX6cu45YOcB4OxxcE0eZKP1q8I/exec';
 
         
         let historyDataCache = [];
@@ -4049,16 +4050,50 @@
             showSuccess('คัดลอกสรุปแล้ว');
         }
 
-        // --- COPYABLE REPORT ---
-        function sendLineReport() {
+        // --- SEND COPYABLE TEXT TO LINE ---
+        async function sendLineReport() {
             if (!latestDashboardData) {
                 alert('กำลังโหลดข้อมูลอยู่ ลองกดอีกครั้งครับ');
                 return;
             }
+            const confirmText = currentDashMode === 'day'
+                ? `ยืนยันส่งสรุปยอดวันที่ ${latestDashboardLabel} เข้า LINE?`
+                : `ยืนยันส่งสรุปยอด ${latestDashboardLabel} เข้า LINE?`;
+            if (!confirm(confirmText)) return;
+
+            const btn = document.getElementById('btn-send-line');
+            const originalHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-70', 'cursor-not-allowed');
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-sm"></i> กำลังส่ง...';
+            }
+
             const report = buildCopyReport(latestDashboardData, latestDashboardLabel);
             latestReportText = report.text;
-            document.getElementById('copy-report-card').innerHTML = report.html;
-            document.getElementById('copy-report-modal').classList.remove('hidden');
+            try {
+                await fetch(LINE_PUSH_WEB_APP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'sendLineText',
+                        source: 'supabase-pos',
+                        mode: currentDashMode,
+                        label: latestDashboardLabel,
+                        text: report.text
+                    })
+                });
+                showSuccess('ส่งสรุปเข้า LINE แล้ว');
+            } catch (err) {
+                alert('ส่ง LINE ไม่สำเร็จ: ' + (err.message || err));
+            } finally {
+                if (btn) {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-70', 'cursor-not-allowed');
+                }
+            }
         }
     </script>
 </body>
