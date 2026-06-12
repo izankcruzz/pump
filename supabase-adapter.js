@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-live-day-source-filter-v45";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-product-bestseller-sort-v46";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -243,9 +243,31 @@
     }
   }
 
+  async function soldRankMap() {
+    const db = await ensureReady();
+    const totals = {};
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await db
+        .from("sales")
+        .select("product_name,qty,payment_status")
+        .neq("payment_status", "void")
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      (data || []).forEach(row => {
+        const name = row.product_name;
+        if (!name) return;
+        totals[name] = (totals[name] || 0) + Number(row.qty || 0);
+      });
+      if (!data || data.length < pageSize) break;
+    }
+    return totals;
+  }
+
   async function getProductData() {
     const rows = await productRows();
-    const items = rows.map(row => mapProduct(row, {}));
+    const ranks = await soldRankMap();
+    const items = rows.map(row => mapProduct(row, ranks));
     return {
       fuels: items.filter(item => item.category === FUEL_CATEGORY),
       products: items.filter(item => item.category !== FUEL_CATEGORY)
