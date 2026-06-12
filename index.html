@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-out-of-stock-last-v48"></script>
+    <script src="./supabase-adapter.js?v=20260612-copyable-report-v49"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -469,8 +469,8 @@
                             class="flex justify-between items-center px-4 py-3 border-b border-slate-100 bg-slate-50/70">
                             <h3 class="font-bold text-slate-700 text-lg" id="daily-list-title">รายการวันนี้</h3>
                             <button onclick="sendLineReport()" id="btn-send-line"
-                                class="text-xs bg-[#06C755] hover:bg-[#05b34c] text-white px-3 py-2 rounded-lg font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"><i
-                                    class="fa-brands fa-line text-lg"></i> ส่งไลน์</button>
+                                class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"><i
+                                    class="fa-solid fa-copy text-sm"></i> สรุป/คัดลอก</button>
                         </div>
                         <div class="flex-1 overflow-y-auto p-4 space-y-5" id="daily-summary-container">
                             <div class="group">
@@ -1538,6 +1538,39 @@
         </div>
     </div>
 
+    <div id="copy-report-modal"
+        class="hidden fixed inset-0 z-[90] flex items-end md:items-center justify-center modal-overlay p-0 md:p-4">
+        <div
+            class="bg-slate-100 rounded-t-3xl md:rounded-3xl w-full md:max-w-xl h-[92vh] md:h-[88vh] shadow-2xl overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-slate-900 text-white flex items-center justify-between gap-3">
+                <div class="font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines text-emerald-300"></i>
+                    สรุปแบบคัดลอกได้
+                </div>
+                <button onclick="closeCopyReportModal()"
+                    class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-auto bg-slate-800 p-3 md:p-5">
+                <div id="copy-report-card"
+                    class="bg-white text-slate-800 rounded-lg shadow-xl p-4 md:p-5 font-[Prompt] select-text">
+                    กำลังสร้างรายงาน...
+                </div>
+            </div>
+            <div class="p-3 bg-white border-t border-slate-200 grid grid-cols-2 gap-2">
+                <button onclick="copyReportText()"
+                    class="py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm active:scale-95 transition">
+                    <i class="fa-solid fa-copy mr-1"></i> คัดลอกข้อความ
+                </button>
+                <button onclick="selectReportText()"
+                    class="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold active:scale-95 transition">
+                    <i class="fa-solid fa-i-cursor mr-1"></i> เลือกข้อความ
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="date-range-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center modal-overlay-lite p-4">
         <div class="bg-white rounded-3xl w-full max-w-md shadow-xl">
             <div
@@ -1605,6 +1638,9 @@
         let currentFuelTypeInModal = '';
         let currentSelectedDate = null;
         let currentSelectedMonth = null;
+        let latestDashboardData = null;
+        let latestDashboardLabel = '';
+        let latestReportText = '';
 
         
         let historyDataCache = [];
@@ -2327,6 +2363,8 @@
                 const fParts = currentDateRange.from.split('-');
                 const tParts = effectiveTo.split('-');
                 const dateDisplay = `${fParts[2]}/${fParts[1]}/${fParts[0]} - ${tParts[2]}/${tParts[1]}/${tParts[0]}`;
+                latestDashboardData = data;
+                latestDashboardLabel = dateDisplay;
 
                 const titleEl = document.getElementById('dash-main-title');
                 if (titleEl) titleEl.innerHTML = `📊 สรุปยอด <span class="text-purple-600">${dateDisplay}</span>`;
@@ -2411,6 +2449,8 @@
                     const yyyy = today.getFullYear();
                     dateDisplay = `${dd}/${mm}/${yyyy}`;
                 }
+                latestDashboardData = data;
+                latestDashboardLabel = dateDisplay;
 
                 const titleEl = document.getElementById('dash-main-title');
                 const p95 = (data.prices && data.prices['เบนซิน 95']) ? data.prices['เบนซิน 95'].toFixed(2) : '-';
@@ -3858,21 +3898,167 @@
             });
         });
 
-        // --- SEND LINE ---
+        function closeCopyReportModal() {
+            document.getElementById('copy-report-modal').classList.add('hidden');
+        }
+
+        function groupReportItems(items, valueKey) {
+            const map = new Map();
+            (Array.isArray(items) ? items : []).forEach(item => {
+                const name = String(item.name || item.title || item.item || item.customer || '-');
+                const unit = String(item.unit || '');
+                const key = `${name}__${unit}`;
+                const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, amount: 0 };
+                old.qty += Number(item.qty || 0);
+                old.total += Number(item.total || 0);
+                old.profit += Number(item.profit || 0);
+                old.amount += Number(item[valueKey || 'amount'] || item.amount || item.total || 0);
+                map.set(key, old);
+            });
+            return Array.from(map.values()).sort((a, b) => Math.abs(b.amount || b.total) - Math.abs(a.amount || a.total));
+        }
+
+        function reportMoney(value, sign = '') {
+            const num = Math.round(Number(value) || 0);
+            return `${sign}${num.toLocaleString('th-TH')}`;
+        }
+
+        function reportQty(value, unit) {
+            return `${(Number(value) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`;
+        }
+
+        function buildCopyReport(data, label) {
+            const summary = (data && data.summary) || {};
+            const lists = (data && data.lists) || {};
+            const sales = groupReportItems(lists.sales || [], 'total');
+            const repayments = Array.isArray(lists.repayments) ? lists.repayments : [];
+            const expenses = Array.isArray(lists.expenses) ? lists.expenses : [];
+            const debts = Array.isArray(lists.debts) ? lists.debts : [];
+            const fuelTests = Array.isArray(lists.fuelTests) ? lists.fuelTests : [];
+            const capitalItems = Array.isArray(lists.capital) ? lists.capital : [];
+            const salesDetail = sales.length
+                ? sales.map(item => `${item.name} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.total)} บาท`).join('\n')
+                : '-';
+            const profitDetail = sales.length
+                ? sales.map(item => `${item.name}: ขาย ${reportMoney(item.total)} | กำไร ${reportMoney(item.profit)}`).join('\n')
+                : '-';
+            const expenseDetail = expenses.length
+                ? expenses.map(item => `${item.title || '-'}: ${reportMoney(item.amount)} บาท`).join('\n')
+                : '-';
+            const debtDetail = debts.length
+                ? debts.map(item => `${item.customer || '-'} ${item.item || ''} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.amount)} บาท`).join('\n')
+                : '-';
+            const repayDetail = repayments.length
+                ? repayments.map(item => `${item.customer || '-'}: ${reportMoney(item.amount)} บาท`).join('\n')
+                : '-';
+            const fuelTestDetail = fuelTests.length
+                ? fuelTests.map(item => `${item.type || '-'}: ${reportQty(item.qty, 'ลิตร')}`).join('\n')
+                : '-';
+            const capitalDetail = capitalItems.length
+                ? capitalItems.map(item => `${String(item.title || '').replace(/^ซื้อ:\s*/, 'ซื้อ: ')}${item.qty ? `\n${reportQty(item.qty, item.unit)}` : ''}\n${reportMoney(item.amount)} บาท`).join('\n\n')
+                : '-';
+            const title = currentDashMode === 'month'
+                ? `สรุปยอดเดือน ${label || ''}`.trim()
+                : `สรุปยอดประจำวันที่ ${label || ''}`.trim();
+            const text = [
+                title,
+                '',
+                `ยอดเงินสุทธิ: ${reportMoney(summary.cash)} บาท`,
+                `กำไรสุทธิวันนี้: ${reportMoney(summary.netProfit, Number(summary.netProfit) >= 0 ? '+' : '')}`,
+                `เงินทุนวันนี้: ${reportMoney(summary.capitalReturned, Number(summary.capitalReturned) >= 0 ? '+' : '')}`,
+                `กำไรคงเหลือ: ${reportMoney(summary.profitBalance)}`,
+                `เงินทุนคงเหลือ: ${reportMoney(summary.capitalBalance)}`,
+                '',
+                `ยอดขายรวม: +${reportMoney(summary.sales)}`,
+                salesDetail,
+                '',
+                `ยอดรับชำระหนี้: +${reportMoney(summary.debtRepaid)}`,
+                repayDetail,
+                '',
+                `ยอดค่าใช้จ่าย: -${reportMoney(summary.expenses)}`,
+                expenseDetail,
+                '',
+                `ยอดค้างชำระ: ${reportMoney(summary.debt)}`,
+                debtDetail,
+                '',
+                'ทดสอบน้ำมัน',
+                fuelTestDetail,
+                '',
+                'กำไร',
+                `กำไรจากการขาย: +${reportMoney(summary.profit)}`,
+                `หักรายจ่าย: -${reportMoney(summary.generalExpenses)}`,
+                `กำไรสุทธิ: ${reportMoney(summary.netProfit)}`,
+                'รายละเอียดกำไรจากการขาย:',
+                profitDetail,
+                '',
+                'เงินทุน',
+                `ทุนคืนจากการขาย: +${reportMoney(summary.capitalReturned)}`,
+                `ใช้ซื้อสต็อก: -${reportMoney(summary.stockPaid)}`,
+                `เงินทุนสุทธิ: ${reportMoney(summary.capitalNet)}`,
+                'รายละเอียดใช้เงินทุน:',
+                capitalDetail
+            ].join('\n');
+
+            const line = (label, value, color) => `<div class="flex justify-between gap-3 text-sm py-1">
+                <span class="text-slate-600">${label}</span>
+                <span class="font-bold ${color || 'text-slate-900'}">${value}</span>
+            </div>`;
+            const section = (color, title, amount, body) => `<div class="border-t border-slate-200 pt-4 mt-4">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center gap-2 font-bold text-slate-700">
+                        <span class="w-1 h-5 rounded-full ${color}"></span>${title}
+                    </div>
+                    <div class="font-bold text-lg">${amount}</div>
+                </div>
+                <pre class="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-500 font-[Prompt] select-text">${escapeHtml(body || '-')}</pre>
+            </div>`;
+            const html = `<div class="select-text">
+                <h2 class="text-2xl font-bold text-slate-800">${escapeHtml(title)}</h2>
+                <div class="text-xs text-slate-400 mt-4">ยอดเงินสุทธิ</div>
+                <div class="text-4xl font-black tracking-tight mt-1">฿ ${reportMoney(summary.cash)}</div>
+                <div class="mt-4">
+                    ${line('กำไรสุทธิวันนี้', reportMoney(summary.netProfit, Number(summary.netProfit) >= 0 ? '+' : ''), 'text-violet-600')}
+                    ${line('เงินทุนวันนี้', reportMoney(summary.capitalReturned, Number(summary.capitalReturned) >= 0 ? '+' : ''), 'text-cyan-600')}
+                    ${line('กำไรคงเหลือ', reportMoney(summary.profitBalance), 'text-violet-600')}
+                    ${line('เงินทุนคงเหลือ', reportMoney(summary.capitalBalance), 'text-cyan-600')}
+                </div>
+                ${section('bg-emerald-500', 'ยอดขายรวม', `+${reportMoney(summary.sales)}`, salesDetail)}
+                ${section('bg-teal-500', 'ยอดรับชำระหนี้', `+${reportMoney(summary.debtRepaid)}`, repayDetail)}
+                ${section('bg-rose-500', 'ยอดค่าใช้จ่าย', `-${reportMoney(summary.expenses)}`, expenseDetail)}
+                ${section('bg-orange-500', 'ยอดค้างชำระ', reportMoney(summary.debt), debtDetail)}
+                ${section('bg-blue-500', 'ทดสอบน้ำมัน', '', fuelTestDetail)}
+                ${section('bg-violet-500', 'กำไร', reportMoney(summary.netProfit), `กำไรจากการขาย: +${reportMoney(summary.profit)}\nหักรายจ่าย: -${reportMoney(summary.generalExpenses)}\nกำไรสุทธิ: ${reportMoney(summary.netProfit)}\n\nรายละเอียดกำไรจากการขาย:\n${profitDetail}`)}
+                ${section('bg-cyan-500', 'เงินทุน', reportMoney(summary.capitalNet), `ทุนคืนจากการขาย: +${reportMoney(summary.capitalReturned)}\nใช้ซื้อสต็อก: -${reportMoney(summary.stockPaid)}\nเงินทุนสุทธิ: ${reportMoney(summary.capitalNet)}\n\nรายละเอียดใช้เงินทุน:\n${capitalDetail}`)}
+            </div>`;
+            return { html, text };
+        }
+
+        function selectReportText() {
+            const el = document.getElementById('copy-report-card');
+            if (!el) return;
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        async function copyReportText() {
+            if (!latestReportText) return;
+            await navigator.clipboard.writeText(latestReportText);
+            showSuccess('คัดลอกสรุปแล้ว');
+        }
+
+        // --- COPYABLE REPORT ---
         function sendLineReport() {
-            let msg = "ยืนยันการส่งสรุปยอดวันนี้เข้า LINE?";
-            if (currentSelectedDate) {
-                msg = `ยืนยันส่งสรุปยอด "ย้อนหลัง" ของวันที่ ${currentSelectedDate} เข้า LINE?`;
+            if (!latestDashboardData) {
+                alert('กำลังโหลดข้อมูลอยู่ ลองกดอีกครั้งครับ');
+                return;
             }
-            if (!confirm(msg)) return;
-
-            const btn = document.getElementById('btn-send-line');
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังส่ง...';
-            btn.disabled = true;
-            btn.classList.add('opacity-70', 'cursor-not-allowed');
-
-            google.script.run.withSuccessHandler(function () { btn.innerHTML = originalHtml; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).withFailureHandler(function (err) { alert("❌ เกิดข้อผิดพลาด: " + err.message); btn.innerHTML = originalHtml; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).DailyReportToLineFlex(currentSelectedDate);
+            const report = buildCopyReport(latestDashboardData, latestDashboardLabel);
+            latestReportText = report.text;
+            document.getElementById('copy-report-card').innerHTML = report.html;
+            document.getElementById('copy-report-modal').classList.remove('hidden');
         }
     </script>
 </body>
