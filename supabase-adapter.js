@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-strict-ledger-date-v30";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-rows-total-balances-v31";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -582,6 +582,16 @@
       type: row.expense_type === "capital" ? "stock" : "general",
       day: bkkDate(row.spent_at)
     }));
+    const periodDebtList = debts
+      .filter(row => ["unpaid", "partial"].includes(String(row.status || "")))
+      .map(row => ({
+        customer: row.customer_name,
+        item: row.product_name,
+        qty: Number(row.qty || 0),
+        unit: (productByName[row.product_name] || {}).unit || "",
+        amount: Number(row.amount || 0),
+        createdAt: row.created_at || null
+      }));
     const debtList = unpaidDebts.map(row => ({
       customer: row.customer_name,
       item: row.product_name,
@@ -603,21 +613,35 @@
 
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
-    const totalDebt = debtList.reduce((sum, row) => sum + row.amount, 0);
+    const totalDebt = periodDebtList.reduce((sum, row) => sum + row.amount, 0);
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
-    const profit = salesList.reduce((sum, row) => sum + row.profit, 0);
-    const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
-    const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
-    const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
+    const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
+    const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
+    const liveStockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
+    const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
     const ledgerBalances = await getArchiveBalances(to, period, from);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
+    const capitalReturned = ledgerBalances.periodCapitalIncome !== null
+      ? ledgerBalances.periodCapitalIncome
+      : liveCapitalReturned;
+    const stockPaid = ledgerBalances.periodCapitalExpense !== null
+      ? ledgerBalances.periodCapitalExpense
+      : liveStockPaid;
+    const generalExpenses = ledgerBalances.periodProfitExpense !== null
+      ? ledgerBalances.periodProfitExpense
+      : liveGeneralExpenses;
+    const profit = ledgerBalances.periodProfitIncome !== null
+      ? ledgerBalances.periodProfitIncome
+      : liveProfit;
+    const headerNetProfit = ledgerBalances.periodProfitNet !== null
+      ? ledgerBalances.periodProfitNet
+      : liveProfit - liveGeneralExpenses;
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
-      : capitalReturned - stockPaid;
+      : liveCapitalReturned - liveStockPaid;
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
-      : profit - generalExpenses;
-    const headerNetProfit = ledgerBalances.profit !== null ? profitBalance : profit - generalExpenses;
+      : liveProfit - liveGeneralExpenses;
 
     return {
       summary: {
@@ -651,7 +675,7 @@
         sales: salesList,
         expenses: expenseList,
         capital: expenseList.filter(row => row.type === "stock"),
-        debts: debtList,
+        debts: periodDebtList,
         repayments: repayList,
         fuelTests
       },
@@ -667,7 +691,7 @@
         profitItems: salesList,
         profitDays: [],
         repayments: repayList,
-        debts: debtList,
+        debts: periodDebtList,
         payments: expenseList,
         sales: { fuel: [], engineOil: [] }
       }
@@ -677,59 +701,69 @@
   async function getArchiveBalances(toDate, period = "day", fromDate = null) {
     const db = await ensureReady();
     const isMonthView = period === "month";
-    const startDate = isMonthView ? `${String(toDate).slice(0, 7)}-01` : (fromDate || toDate);
+    const monthStart = `${String(toDate).slice(0, 7)}-01`;
+    const periodStart = isMonthView ? monthStart : (fromDate || toDate);
     const result = {
       capital: null,
       profit: null,
       capitalDate: null,
       profitDate: null,
       capitalCreatedAt: null,
-      profitCreatedAt: null
+      profitCreatedAt: null,
+      periodCapitalIncome: null,
+      periodCapitalExpense: null,
+      periodCapitalNet: null,
+      periodProfitIncome: null,
+      periodProfitExpense: null,
+      periodProfitNet: null
     };
 
-    const readMonthlyCapitalNet = async () => {
-      if (!toDate) return;
-      const { data, error } = await db
-        .from("money_ledger")
-        .select("entry_date,net_amount,income_amount,expense_amount,created_at")
-        .eq("ledger_type", "capital")
-        .gte("entry_date", startDate)
-        .lte("entry_date", toDate)
-        .order("entry_date", { ascending: false });
-      if (error) throw error;
-      if (!(data || []).length) return;
-      const rows = data || [];
-      const nets = rows.map(row => (
-        row.net_amount !== null && row.net_amount !== undefined
-          ? Number(row.net_amount || 0)
-          : Number(row.income_amount || 0) - Number(row.expense_amount || 0)
-      ));
-      const total = nets.reduce((sum, net) => sum + net, 0);
-      const duplicateMonthlyTotal = nets.find(net => net !== 0 && Math.abs((total - net) - net) < 0.01);
-      result.capital = duplicateMonthlyTotal !== undefined ? duplicateMonthlyTotal : total;
-      /*
-      result.capital = (data || []).reduce((sum, row) => {
-        const net = row.net_amount !== null && row.net_amount !== undefined
-          ? Number(row.net_amount || 0)
-          : Number(row.income_amount || 0) - Number(row.expense_amount || 0);
-        return sum + net;
-      }, 0);
-      */
-      result.capitalDate = (data || [])[0].entry_date;
-      result.capitalCreatedAt = rows
-        .map(row => row.created_at)
-        .filter(Boolean)
-        .sort()
-        .pop() || null;
+    const num = value => Number(value || 0);
+    const closeMoney = (a, b) => Math.abs(num(a) - num(b)) < 0.01;
+    const rowNet = row => (
+      row.net_amount !== null && row.net_amount !== undefined
+        ? num(row.net_amount)
+        : num(row.income_amount) - num(row.expense_amount)
+    );
+    const summarizeLedgerRows = rows => (rows || []).reduce((sum, row) => {
+      sum.income += num(row.income_amount);
+      sum.expense += num(row.expense_amount);
+      sum.net += rowNet(row);
+      return sum;
+    }, { income: 0, expense: 0, net: 0 });
+    const latestValue = values => values.filter(Boolean).map(String).sort().pop() || null;
+    const findMonthlyTotalRow = rows => {
+      const list = rows || [];
+      if (list.length < 2) return null;
+      const total = summarizeLedgerRows(list);
+      return list.find(row => {
+        const checks = [];
+        const income = num(row.income_amount);
+        const expense = num(row.expense_amount);
+        const net = rowNet(row);
+        if (Math.abs(income) > 0.01) checks.push(closeMoney(total.income - income, income));
+        if (Math.abs(expense) > 0.01) checks.push(closeMoney(total.expense - expense, expense));
+        if (Math.abs(net) > 0.01) checks.push(closeMoney(total.net - net, net));
+        return checks.length >= 2 && checks.every(Boolean);
+      }) || null;
     };
+    const balanceFromRows = (rows, summary) => {
+      const list = rows || [];
+      if (list.length === 1) {
+        const balance = num(list[0].balance_amount);
+        if (Math.abs(balance) > 0.01) return balance;
+      }
+      return summary.net;
+    };
+    const betweenPeriod = row => row.entry_date >= periodStart && row.entry_date <= toDate;
 
-    const readMonthlyProfitBalance = async () => {
+    const readLedgerSummary = async ledgerType => {
       if (!toDate) return;
       const { data, error } = await db
         .from("money_ledger")
         .select("entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at")
-        .eq("ledger_type", "profit")
-        .gte("entry_date", startDate)
+        .eq("ledger_type", ledgerType)
+        .gte("entry_date", monthStart)
         .lte("entry_date", toDate)
         .order("entry_date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -737,28 +771,46 @@
       const rows = data || [];
       if (!rows.length) return;
 
-      const nets = rows.map(row => (
-        row.net_amount !== null && row.net_amount !== undefined
-          ? Number(row.net_amount || 0)
-          : Number(row.income_amount || 0) - Number(row.expense_amount || 0)
-      ));
-      const total = nets.reduce((sum, net) => sum + net, 0);
-      const duplicateMonthlyTotal = nets.find(net => net !== 0 && Math.abs((total - net) - net) < 0.01);
-      result.profit = duplicateMonthlyTotal !== undefined ? duplicateMonthlyTotal : total;
-      result.profitDate = rows[0].entry_date;
-      result.profitCreatedAt = rows
-        .map(row => row.created_at)
-        .filter(Boolean)
-        .sort()
-        .pop() || null;
+      const monthlyTotalRow = findMonthlyTotalRow(rows);
+      const detailRows = monthlyTotalRow ? rows.filter(row => row !== monthlyTotalRow) : rows;
+      const periodRows = isMonthView
+        ? (monthlyTotalRow ? [monthlyTotalRow] : detailRows)
+        : detailRows.filter(betweenPeriod);
+      const periodSummary = summarizeLedgerRows(periodRows);
+      const balanceRows = monthlyTotalRow ? [monthlyTotalRow] : detailRows;
+      const balanceSummary = summarizeLedgerRows(balanceRows);
+      const coveredRows = detailRows.length ? detailRows : balanceRows;
+      const coveredDate = latestValue(coveredRows.map(row => row.entry_date));
+      const coveredCreatedAt = latestValue(coveredRows.map(row => row.created_at));
+
+      if (ledgerType === "capital") {
+        if (periodRows.length || isMonthView) {
+          result.periodCapitalIncome = periodSummary.income;
+          result.periodCapitalExpense = periodSummary.expense;
+          result.periodCapitalNet = periodSummary.net;
+        }
+        result.capital = balanceFromRows(balanceRows, balanceSummary);
+        result.capitalDate = coveredDate;
+        result.capitalCreatedAt = coveredCreatedAt;
+      }
+      if (ledgerType === "profit") {
+        if (periodRows.length || isMonthView) {
+          result.periodProfitIncome = periodSummary.income;
+          result.periodProfitExpense = periodSummary.expense;
+          result.periodProfitNet = periodSummary.net;
+        }
+        result.profit = balanceFromRows(balanceRows, balanceSummary);
+        result.profitDate = coveredDate;
+        result.profitCreatedAt = coveredCreatedAt;
+      }
     };
 
     try {
-      await readMonthlyCapitalNet();
-      await readMonthlyProfitBalance();
+      await readLedgerSummary("capital");
+      await readLedgerSummary("profit");
     } catch (err) {
       if (!String(err.message || "").includes("money_ledger")) {
-        console.warn("monthly ledger lookup failed", err);
+        console.warn("monthly ledger summary lookup failed", err);
       }
     }
 
@@ -769,7 +821,7 @@
         .neq("capital_balance", 0)
         .order("summary_date", { ascending: false })
         .limit(1);
-      if (useDateFilter && toDate) query = query.gte("summary_date", startDate).lte("summary_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("summary_date", periodStart).lte("summary_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       const row = (data || [])[0];
@@ -795,7 +847,7 @@
         .order("entry_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(30);
-      if (useDateFilter && toDate) query = query.gte("entry_date", startDate).lte("entry_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("entry_date", monthStart).lte("entry_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       const rows = data || [];
@@ -858,7 +910,7 @@
         .select("summary_date,capital_balance,profit,created_at")
         .order("summary_date", { ascending: false })
         .limit(1);
-      if (useDateFilter && toDate) query = query.gte("summary_date", startDate).lte("summary_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("summary_date", monthStart).lte("summary_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       applyDailySummary((data || [])[0]);
@@ -1105,16 +1157,18 @@
     });
   }
 
-  async function debugArchiveBalances(toDate = bkkDate()) {
+  async function debugArchiveBalances(toDate = bkkDate(), period = "day", fromDate = null) {
     const db = await ensureReady();
     const [capital, profit, balances] = await Promise.all([
       db.from("money_ledger").select("ledger_type,entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at").eq("ledger_type", "capital").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
       db.from("money_ledger").select("ledger_type,entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at").eq("ledger_type", "profit").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
-      getArchiveBalances(toDate)
+      getArchiveBalances(toDate, period, fromDate)
     ]);
     return {
       version: window.POS_SUPABASE_ADAPTER_VERSION,
       toDate,
+      period,
+      fromDate,
       balances,
       capitalRows: capital.data || [],
       capitalError: capital.error && capital.error.message,
