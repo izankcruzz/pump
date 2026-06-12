@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-line-text-report-v50"></script>
+    <script src="./supabase-adapter.js?v=20260612-line-flex-report-v51"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -4034,6 +4034,60 @@
             return { html, text };
         }
 
+        function lineFlexTextList(items, formatter, emptyText = '-') {
+            const list = Array.isArray(items) ? items : [];
+            return list.length ? list.map(formatter).join('\n') : emptyText;
+        }
+
+        function lineFlexColor(value, positiveColor) {
+            const num = Number(value) || 0;
+            if (num < 0) return '#FF334B';
+            if (num === 0) return '#999999';
+            return positiveColor;
+        }
+
+        function buildLineFlexReportPayload(data, label) {
+            const summary = (data && data.summary) || {};
+            const lists = (data && data.lists) || {};
+            const sales = groupReportItems(lists.sales || [], 'total');
+            const capitalItems = Array.isArray(lists.capital) ? lists.capital : [];
+            const dateText = currentDashMode === 'month' ? `เดือน ${label || ''}` : (label || '');
+            const signed = (value) => reportMoney(value, Number(value) >= 0 ? '+' : '');
+
+            return {
+                date: dateText,
+                sales: reportMoney(summary.sales),
+                sales_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)} (${reportMoney(item.total)}บ.)`),
+                expense: reportMoney(summary.expenses),
+                expense_desc: lineFlexTextList(lists.expenses || [], item => `${item.title || '-'}: ${reportMoney(item.amount)}บ.`),
+                profit_gross: reportMoney(summary.profit || 0),
+                profit_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ขาย ${reportMoney(item.total)}บ. | กำไร ${reportMoney(item.profit)}บ.`),
+                capital_return: reportMoney(summary.capitalReturned || 0),
+                capital_return_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.costTotal || 0)}บ.`),
+                capital: reportMoney(summary.stockPaid || 0),
+                capital_net: reportMoney(summary.capitalNet || 0),
+                capital_balance: reportMoney(summary.capitalBalance || 0),
+                profit_today: signed(summary.netProfit || 0),
+                profit_today_color: lineFlexColor(summary.netProfit || 0, '#7C3AED'),
+                capital_today: signed(summary.capitalReturned || 0),
+                capital_today_color: lineFlexColor(summary.capitalReturned || 0, '#0891B2'),
+                monthly_profit: signed(summary.profitBalance || 0),
+                monthly_profit_color: lineFlexColor(summary.profitBalance || 0, '#7C3AED'),
+                capital_total: reportMoney(summary.capitalBalance || 0),
+                capital_desc: lineFlexTextList(capitalItems, item => {
+                    const qty = item.qty ? ` x${reportQty(item.qty, item.unit)}` : '';
+                    return `${String(item.title || '').replace(/^ซื้อ:\s*/, 'ซื้อ: ')}${qty}: ${reportMoney(item.amount)}บ.`;
+                }),
+                debt: reportMoney(summary.debt),
+                debt_desc: lineFlexTextList(lists.debts || [], item => `${item.customer || '-'} (${item.item || '-'} x${reportQty(item.qty, item.unit)}): ${reportMoney(item.amount)}บ.`),
+                repay: reportMoney(summary.debtRepaid),
+                repay_desc: lineFlexTextList(lists.repayments || [], item => `${item.customer || '-'}: +${reportMoney(item.amount)}บ.`),
+                fueltest_desc: lineFlexTextList(lists.fuelTests || [], item => `${item.type || '-'} ${reportQty(item.qty, 'ลิตร')}`),
+                cash: reportMoney(summary.cash),
+                profit: reportMoney(summary.netProfit)
+            };
+        }
+
         function selectReportText() {
             const el = document.getElementById('copy-report-card');
             if (!el) return;
@@ -4050,7 +4104,7 @@
             showSuccess('คัดลอกสรุปแล้ว');
         }
 
-        // --- SEND COPYABLE TEXT TO LINE ---
+        // --- SEND FLEX CARD TO LINE ---
         async function sendLineReport() {
             if (!latestDashboardData) {
                 alert('กำลังโหลดข้อมูลอยู่ ลองกดอีกครั้งครับ');
@@ -4071,16 +4125,18 @@
 
             const report = buildCopyReport(latestDashboardData, latestDashboardLabel);
             latestReportText = report.text;
+            const flexReport = buildLineFlexReportPayload(latestDashboardData, latestDashboardLabel);
             try {
                 await fetch(LINE_PUSH_WEB_APP_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({
-                        action: 'sendLineText',
+                        action: 'sendLineFlex',
                         source: 'supabase-pos',
                         mode: currentDashMode,
                         label: latestDashboardLabel,
+                        report: flexReport,
                         text: report.text
                     })
                 });
