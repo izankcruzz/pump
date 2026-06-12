@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-line-capital-detail-v52";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-balance-card-v53";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
