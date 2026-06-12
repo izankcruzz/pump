@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-ledger-balance-v24";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-net-profit-debt-v25";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -585,7 +585,8 @@
       item: row.product_name,
       qty: Number(row.qty || 0),
       unit: (productByName[row.product_name] || {}).unit || "",
-      amount: Number(row.amount || 0)
+      amount: Number(row.amount || 0),
+      createdAt: row.created_at || null
     }));
     const repayList = payments.map(row => ({
       customer: row.customer_name,
@@ -600,7 +601,12 @@
 
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
-    const totalDebt = debtList.reduce((sum, row) => sum + row.amount, 0);
+    const archivedDebt = await getArchiveDebtTotal(db, from, to);
+    const totalDebt = archivedDebt.total !== null
+      ? archivedDebt.total + debtList
+        .filter(row => archivedDebt.createdAt && row.createdAt && new Date(row.createdAt).getTime() > new Date(archivedDebt.createdAt).getTime() + 1000)
+        .reduce((sum, row) => sum + row.amount, 0)
+      : debtList.reduce((sum, row) => sum + row.amount, 0);
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
     const profit = salesList.reduce((sum, row) => sum + row.profit, 0);
     const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
@@ -733,11 +739,20 @@
       const rows = data || [];
       if (!rows.length) return;
 
-      const row = rows.find(candidate => Number(candidate.balance_amount || 0) !== 0)
-        || rows[0];
-      result.profit = Number(row.balance_amount || 0);
-      result.profitDate = row.entry_date;
-      result.profitCreatedAt = row.created_at || null;
+      const nets = rows.map(row => (
+        row.net_amount !== null && row.net_amount !== undefined
+          ? Number(row.net_amount || 0)
+          : Number(row.income_amount || 0) - Number(row.expense_amount || 0)
+      ));
+      const total = nets.reduce((sum, net) => sum + net, 0);
+      const duplicateMonthlyTotal = nets.find(net => net !== 0 && Math.abs((total - net) - net) < 0.01);
+      result.profit = duplicateMonthlyTotal !== undefined ? duplicateMonthlyTotal : total;
+      result.profitDate = rows[0].entry_date;
+      result.profitCreatedAt = rows
+        .map(row => row.created_at)
+        .filter(Boolean)
+        .sort()
+        .pop() || null;
     };
 
     try {
@@ -912,6 +927,32 @@
       }
     });
 
+    return result;
+  }
+
+  async function getArchiveDebtTotal(db, fromDate, toDate) {
+    const result = { total: null, createdAt: null };
+    try {
+      const { data, error } = await db
+        .from("daily_summaries")
+        .select("summary_date,debt,created_at")
+        .gte("summary_date", fromDate)
+        .lte("summary_date", toDate)
+        .order("summary_date", { ascending: false });
+      if (error) throw error;
+      const rows = data || [];
+      if (!rows.length) return result;
+      result.total = rows.reduce((sum, row) => sum + Number(row.debt || 0), 0);
+      result.createdAt = rows
+        .map(row => row.created_at)
+        .filter(Boolean)
+        .sort()
+        .pop() || null;
+    } catch (err) {
+      if (!String(err.message || "").includes("daily_summaries")) {
+        console.warn("daily debt lookup failed", err);
+      }
+    }
     return result;
   }
 
