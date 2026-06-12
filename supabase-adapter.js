@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-header-profit-v28";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-ledger-v29";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -609,7 +609,7 @@
     const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
-    const ledgerBalances = await getArchiveBalances(to);
+    const ledgerBalances = await getArchiveBalances(to, period, from);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
@@ -674,8 +674,10 @@
     };
   }
 
-  async function getArchiveBalances(toDate) {
+  async function getArchiveBalances(toDate, period = "day", fromDate = null) {
     const db = await ensureReady();
+    const isMonthView = period === "month";
+    const startDate = isMonthView ? `${String(toDate).slice(0, 7)}-01` : (fromDate || toDate);
     const result = {
       capital: null,
       profit: null,
@@ -687,12 +689,11 @@
 
     const readMonthlyCapitalNet = async () => {
       if (!toDate) return;
-      const monthStart = `${String(toDate).slice(0, 7)}-01`;
       const { data, error } = await db
         .from("money_ledger")
         .select("entry_date,net_amount,income_amount,expense_amount,created_at")
         .eq("ledger_type", "capital")
-        .gte("entry_date", monthStart)
+        .gte("entry_date", startDate)
         .lte("entry_date", toDate)
         .order("entry_date", { ascending: false });
       if (error) throw error;
@@ -724,12 +725,11 @@
 
     const readMonthlyProfitBalance = async () => {
       if (!toDate) return;
-      const monthStart = `${String(toDate).slice(0, 7)}-01`;
       const { data, error } = await db
         .from("money_ledger")
         .select("entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at")
         .eq("ledger_type", "profit")
-        .gte("entry_date", monthStart)
+        .gte("entry_date", startDate)
         .lte("entry_date", toDate)
         .order("entry_date", { ascending: false })
         .order("created_at", { ascending: false });
