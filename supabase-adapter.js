@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-cash-legacy-v34";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-split-v35";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -623,17 +623,22 @@
     const balanceDate = bkkDate();
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
-    const capitalReturned = liveCapitalReturned || periodLedger.periodCapitalIncome || 0;
+    const periodDeltas = await getBalanceDeltas(db, productByName, periodLedger, to);
+    const capitalReturned = periodLedger.periodCapitalIncome !== null
+      ? periodLedger.periodCapitalIncome + periodDeltas.capitalReturned
+      : liveCapitalReturned;
     const stockPaid = periodLedger.periodCapitalExpense !== null
-      ? periodLedger.periodCapitalExpense
+      ? periodLedger.periodCapitalExpense + periodDeltas.stockPaid
       : liveStockPaid;
     const generalExpenses = periodLedger.periodProfitExpense !== null
-      ? periodLedger.periodProfitExpense
+      ? periodLedger.periodProfitExpense + periodDeltas.generalExpenses
       : liveGeneralExpenses;
-    const profit = liveProfit || periodLedger.periodProfitIncome || 0;
-    const headerNetProfit = liveProfit || liveGeneralExpenses
-      ? liveProfit - liveGeneralExpenses
-      : (periodLedger.periodProfitNet || 0);
+    const profit = periodLedger.periodProfitIncome !== null
+      ? periodLedger.periodProfitIncome + periodDeltas.profit
+      : liveProfit;
+    const headerNetProfit = periodLedger.periodProfitNet !== null
+      ? periodLedger.periodProfitNet + periodDeltas.profit - periodDeltas.generalExpenses
+      : liveProfit - liveGeneralExpenses;
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
       : liveCapitalReturned - liveStockPaid;
@@ -772,9 +777,18 @@
 
       const monthlyTotalRow = findMonthlyTotalRow(rows);
       const detailRows = monthlyTotalRow ? rows.filter(row => row !== monthlyTotalRow) : rows;
+      const isCapitalCarryRow = row => {
+        if (ledgerType !== "capital") return false;
+        if (row.entry_date !== monthStart) return false;
+        if (String(row.income_detail || "").trim() || String(row.expense_detail || "").trim()) return false;
+        const net = rowNet(row);
+        const balance = num(row.balance_amount);
+        return Math.abs(net) > 0.01 && Math.abs(balance - net) > 0.01;
+      };
+      const periodDetailRows = detailRows.filter(row => !isCapitalCarryRow(row));
       const periodRows = isMonthView
-        ? (monthlyTotalRow ? [monthlyTotalRow] : detailRows)
-        : detailRows.filter(betweenPeriod);
+        ? (monthlyTotalRow ? [monthlyTotalRow] : periodDetailRows)
+        : periodDetailRows.filter(betweenPeriod);
       const periodSummary = summarizeLedgerRows(periodRows);
       const balanceRows = monthlyTotalRow ? [monthlyTotalRow] : detailRows;
       const balanceSummary = summarizeLedgerRows(balanceRows);
