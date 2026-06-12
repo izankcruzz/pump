@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-profit-balance-card-v53"></script>
+    <script src="./supabase-adapter.js?v=20260612-balance-visual-v54"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -298,7 +298,7 @@
                             </div>
                         </div>
                         <div class="mt-3 pt-3 border-t border-violet-100 flex items-end justify-between gap-3">
-                            <span class="text-xs font-black text-violet-600 uppercase">เงินสดสุทธิ</span>
+                            <span class="text-sm font-black text-violet-600 uppercase">เงินสดสุทธิ</span>
                             <span class="text-2xl md:text-3xl font-black text-slate-900 leading-tight" id="dash-cash-source">...</span>
                         </div>
                         <div id="dash-cash" class="hidden">...</div>
@@ -318,8 +318,11 @@
                         <div class="text-2xl md:text-3xl font-black text-slate-900 leading-tight" id="dash-capital">...</div>
                         <div id="dash-capital-detail" class="mt-2 text-[11px] leading-snug text-slate-500">...</div>
                         <div class="mt-3 pt-3 border-t border-cyan-100">
-                            <div class="text-xs font-black text-violet-600 mb-1">กำไรคงเหลือ</div>
-                            <div id="dash-profit-balance" class="text-[11px] leading-snug text-slate-500">...</div>
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <div class="text-sm font-black text-slate-700">กำไรคงเหลือ</div>
+                                <i class="fa-solid fa-chart-line text-violet-500"></i>
+                            </div>
+                            <div class="text-2xl md:text-3xl font-black text-slate-900 leading-tight" id="dash-profit-balance">...</div>
                         </div>
                         <div class="mt-3 pt-3 border-t border-cyan-100">
                             <div class="text-xs font-black text-sky-600 mb-1">หมายเหตุซื้อวันนี้</div>
@@ -2383,7 +2386,7 @@
                 setTextIfExists('dash-cash', fmt0(data.summary.cash));
                 setTextIfExists('dash-cash-source', fmt0(data.summary.cash));
                 setTextIfExists('dash-profit', fmt0(data.summary.netProfit));
-                setTextIfExists('dash-profit-balance', `กำไรคงเหลือ ${fmt0(data.summary.profitBalance)}`);
+                setTextIfExists('dash-profit-balance', `${fmt0(data.summary.profitBalance)} บาท`);
                 setTextIfExists('dash-capital', fmt0(data.summary.capitalBalance));
                 setTextIfExists('dash-capital-detail', `ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)}`);
                 setTextIfExists('dash-capital-day', fmt0(data.summary.capitalReturned));
@@ -2482,7 +2485,7 @@
                 setTextIfExists('dash-cash', data.summary.cash.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-cash-source', data.summary.cash.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-profit', data.summary.netProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
-                setTextIfExists('dash-profit-balance', `กำไรคงเหลือ ${data.summary.profitBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
+                setTextIfExists('dash-profit-balance', `${data.summary.profitBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
                 setTextIfExists('dash-capital', data.summary.capitalBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-capital-detail', `ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
                 setTextIfExists('dash-capital-day', data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
