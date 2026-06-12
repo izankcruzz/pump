@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-legacy-cash-v39";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-local-month-v40";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -37,11 +37,19 @@
     }).format(d);
   }
 
+  function ymd(year, month, day) {
+    return [
+      String(year).padStart(4, "0"),
+      String(month).padStart(2, "0"),
+      String(day).padStart(2, "0")
+    ].join("-");
+  }
+
   function addDays(dateText, days) {
     const [y, m, d] = String(dateText || bkkDate()).split("-").map(Number);
     const date = new Date(y, (m || 1) - 1, d || 1);
     date.setDate(date.getDate() + days);
-    return date.toISOString().slice(0, 10);
+    return ymd(date.getFullYear(), date.getMonth() + 1, date.getDate());
   }
 
   function thaiDate(value) {
@@ -527,11 +535,12 @@
     let from = bkkDate();
     let to = bkkDate();
     if (period === "month") {
-      const base = customDate ? new Date(customDate) : new Date();
-      const y = base.getFullYear();
-      const m = base.getMonth();
-      from = new Date(y, m, 1).toISOString().slice(0, 10);
-      to = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+      const monthMatch = String(customDate || "").match(/^(\d{4})-(\d{2})/);
+      const base = customDate && !monthMatch ? new Date(customDate) : new Date();
+      const y = monthMatch ? Number(monthMatch[1]) : base.getFullYear();
+      const m = monthMatch ? Number(monthMatch[2]) : base.getMonth() + 1;
+      from = ymd(y, m, 1);
+      to = ymd(y, m, new Date(y, m, 0).getDate());
     } else if (period === "range" && dateRange) {
       from = dateRange.from;
       to = dateRange.to;
