@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-net-profit-debt-v25";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-unpaid-debt-v26";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -542,18 +542,20 @@
 
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
-    const [salesRes, expensesRes, debtsRes, paymentsRes, testsRes] = await Promise.all([
+    const [salesRes, expensesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
       db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
       db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
+      db.from("debts").select("*").in("status", ["unpaid", "partial"]),
       db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
       db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end)
     ]);
-    for (const res of [salesRes, expensesRes, debtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
+    for (const res of [salesRes, expensesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
 
     const sales = salesRes.data || [];
     const expenses = expensesRes.data || [];
     const debts = debtsRes.data || [];
+    const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = paymentsRes.data || [];
     const tests = testsRes.data || [];
 
@@ -580,7 +582,7 @@
       type: row.expense_type === "capital" ? "stock" : "general",
       day: bkkDate(row.spent_at)
     }));
-    const debtList = debts.map(row => ({
+    const debtList = unpaidDebts.map(row => ({
       customer: row.customer_name,
       item: row.product_name,
       qty: Number(row.qty || 0),
@@ -601,12 +603,7 @@
 
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
-    const archivedDebt = await getArchiveDebtTotal(db, from, to);
-    const totalDebt = archivedDebt.total !== null
-      ? archivedDebt.total + debtList
-        .filter(row => archivedDebt.createdAt && row.createdAt && new Date(row.createdAt).getTime() > new Date(archivedDebt.createdAt).getTime() + 1000)
-        .reduce((sum, row) => sum + row.amount, 0)
-      : debtList.reduce((sum, row) => sum + row.amount, 0);
+    const totalDebt = debtList.reduce((sum, row) => sum + row.amount, 0);
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
     const profit = salesList.reduce((sum, row) => sum + row.profit, 0);
     const capitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
@@ -927,32 +924,6 @@
       }
     });
 
-    return result;
-  }
-
-  async function getArchiveDebtTotal(db, fromDate, toDate) {
-    const result = { total: null, createdAt: null };
-    try {
-      const { data, error } = await db
-        .from("daily_summaries")
-        .select("summary_date,debt,created_at")
-        .gte("summary_date", fromDate)
-        .lte("summary_date", toDate)
-        .order("summary_date", { ascending: false });
-      if (error) throw error;
-      const rows = data || [];
-      if (!rows.length) return result;
-      result.total = rows.reduce((sum, row) => sum + Number(row.debt || 0), 0);
-      result.createdAt = rows
-        .map(row => row.created_at)
-        .filter(Boolean)
-        .sort()
-        .pop() || null;
-    } catch (err) {
-      if (!String(err.message || "").includes("daily_summaries")) {
-        console.warn("daily debt lookup failed", err);
-      }
-    }
     return result;
   }
 
