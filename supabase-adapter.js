@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-out-of-stock-last-v48";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-copyable-report-v49";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
