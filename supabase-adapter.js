@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-carry-row-v36";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-monthly-groups-v37";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -542,18 +542,20 @@
 
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
-    const [salesRes, expensesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
+    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
       db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
+      db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
       db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
       db.from("debts").select("*").in("status", ["unpaid", "partial"]),
       db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
       db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end)
     ]);
-    for (const res of [salesRes, expensesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
+    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
 
     const sales = salesRes.data || [];
     const expenses = expensesRes.data || [];
+    const purchases = purchasesRes.data || [];
     const debts = debtsRes.data || [];
     const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = (paymentsRes.data || []).filter(row => row.note !== "import paid debt");
@@ -569,6 +571,8 @@
         day: bkkDate(row.sold_at),
         qty,
         unit: row.unit,
+        category: product.category || "",
+        isFuel: isFuelProduct(product) || FUEL_NAMES.includes(row.product_name),
         total,
         costTotal: cost * qty,
         profit: total - (cost * qty),
@@ -581,6 +585,15 @@
       amount: Number(row.amount || 0),
       type: row.expense_type === "capital" ? "stock" : "general",
       day: bkkDate(row.spent_at)
+    }));
+    const purchaseList = purchases.map(row => ({
+      title: `ซื้อ: ${row.product_name}`,
+      name: row.product_name,
+      amount: Number(row.total || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0),
+      qty: Number(row.qty || 0),
+      unit: row.unit || (productByName[row.product_name] || {}).unit || "",
+      type: "stock",
+      day: bkkDate(row.purchased_at)
     }));
     const periodDebtList = debts
       .filter(row => ["unpaid", "partial"].includes(String(row.status || "")))
@@ -646,6 +659,37 @@
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
     const netCash = capitalReturned + headerNetProfit + debtRepaid - totalDebt;
+    const sumRowsByName = items => {
+      const map = new Map();
+      (items || []).forEach(item => {
+        const key = item.name || item.title || "";
+        if (!key) return;
+        const old = map.get(key) || {
+          name: key,
+          title: item.title || key,
+          qty: 0,
+          unit: item.unit || "",
+          total: 0,
+          amount: 0,
+          profit: 0,
+          costTotal: 0,
+          type: item.type || "stock"
+        };
+        old.qty += Number(item.qty || 0);
+        old.total += Number(item.total || item.amount || 0);
+        old.amount += Number(item.amount || item.total || 0);
+        old.profit += Number(item.profit || 0);
+        old.costTotal += Number(item.costTotal || 0);
+        old.unit = old.unit || item.unit || "";
+        old.type = old.type || item.type || "stock";
+        map.set(key, old);
+      });
+      return Array.from(map.values()).sort((a, b) => b.total - a.total || b.qty - a.qty || a.name.localeCompare(b.name));
+    };
+    const fuelSales = sumRowsByName(salesList.filter(row => row.isFuel));
+    const engineOilSales = sumRowsByName(salesList.filter(row => !row.isFuel));
+    const bestSellerItems = sumRowsByName(salesList);
+    const monthlyPayments = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type !== "stock")];
 
     return {
       summary: {
@@ -692,12 +736,16 @@
         }
       },
       monthlyOilSummary: {
-        profitItems: salesList,
         profitDays: [],
         repayments: repayList,
         debts: periodDebtList,
-        payments: expenseList,
-        sales: { fuel: [], engineOil: [] }
+        payments: monthlyPayments,
+        salesTotal: fuelSales.concat(engineOilSales).reduce((sum, row) => sum + Number(row.total || 0), 0),
+        paymentsTotal: monthlyPayments.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+        debtTotal: totalDebt,
+        repaidTotal: debtRepaid,
+        sales: { fuel: fuelSales, engineOil: engineOilSales },
+        profitItems: bestSellerItems
       }
     };
   }
