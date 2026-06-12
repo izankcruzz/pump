@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-split-v35";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-capital-carry-row-v36";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -783,7 +783,7 @@
         if (String(row.income_detail || "").trim() || String(row.expense_detail || "").trim()) return false;
         const net = rowNet(row);
         const balance = num(row.balance_amount);
-        return Math.abs(net) > 0.01 && Math.abs(balance - net) > 0.01;
+        return balance > 0 && Math.abs(net) > 0.01 && Math.abs(balance - net) > 0.01;
       };
       const periodDetailRows = detailRows.filter(row => !isCapitalCarryRow(row));
       const periodRows = isMonthView
