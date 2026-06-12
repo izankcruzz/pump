@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-rows-latest-balances-v32";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-cash-legacy-v34";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -623,34 +623,31 @@
     const balanceDate = bkkDate();
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
-    const capitalReturned = periodLedger.periodCapitalIncome !== null
-      ? periodLedger.periodCapitalIncome
-      : liveCapitalReturned;
+    const capitalReturned = liveCapitalReturned || periodLedger.periodCapitalIncome || 0;
     const stockPaid = periodLedger.periodCapitalExpense !== null
       ? periodLedger.periodCapitalExpense
       : liveStockPaid;
     const generalExpenses = periodLedger.periodProfitExpense !== null
       ? periodLedger.periodProfitExpense
       : liveGeneralExpenses;
-    const profit = periodLedger.periodProfitIncome !== null
-      ? periodLedger.periodProfitIncome
-      : liveProfit;
-    const headerNetProfit = periodLedger.periodProfitNet !== null
-      ? periodLedger.periodProfitNet
-      : liveProfit - liveGeneralExpenses;
+    const profit = liveProfit || periodLedger.periodProfitIncome || 0;
+    const headerNetProfit = liveProfit || liveGeneralExpenses
+      ? liveProfit - liveGeneralExpenses
+      : (periodLedger.periodProfitNet || 0);
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
       : liveCapitalReturned - liveStockPaid;
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
+    const netCash = capitalReturned + headerNetProfit + debtRepaid - totalDebt;
 
     return {
       summary: {
         sales: totalSales,
         expenses: totalExpenses,
         debt: totalDebt,
-        cash: totalSales + debtRepaid - totalExpenses,
+        cash: netCash,
         profit,
         netProfit: headerNetProfit,
         actualReceived: totalSales + debtRepaid,
@@ -685,7 +682,7 @@
         labels: [from === to ? thaiDate(from) : `${from} - ${to}`],
         data: {
           sales: [totalSales],
-          cash: [totalSales + debtRepaid - totalExpenses],
+          cash: [netCash],
           profit: [headerNetProfit]
         }
       },
