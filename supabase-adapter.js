@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-sales-total-label-v61";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-sales-total-label-v61-gas95-first";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -269,8 +269,15 @@
     const rows = await productRows();
     const ranks = await soldRankMap();
     const items = rows.map(row => mapProduct(row, ranks));
+    const fuelItems = items.filter(item => item.category === FUEL_CATEGORY);
+    const gas95 = fuelItems.find(item => String(item.name || "").includes("95"));
+    const diesel = fuelItems.find(item => item !== gas95 && /diesel|ดีเซล/i.test(String(item.name || "")));
+    const orderedFuels = [gas95, diesel].filter(Boolean);
+    fuelItems.forEach(item => {
+      if (!orderedFuels.includes(item)) orderedFuels.push(item);
+    });
     return {
-      fuels: items.filter(item => item.category === FUEL_CATEGORY),
+      fuels: orderedFuels,
       products: items.filter(item => item.category !== FUEL_CATEGORY)
     };
   }
