@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-edit-history-v43";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-no-import-fallback-v44";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -583,7 +583,7 @@
       return Array.from(map.values());
     };
     const readCreatedAtFallback = async (table, select = "*", filterBuilder = null) => {
-      if (period !== "day") return [];
+      return [];
       let query = db.from(table).select(select).gte("created_at", start).lte("created_at", end);
       if (filterBuilder) query = filterBuilder(query);
       const { data, error } = await query;
