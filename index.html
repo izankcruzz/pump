@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-favicon-v58"></script>
+    <script src="./supabase-adapter.js?v=20260612-sales-capital-badge-v59"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -480,6 +480,8 @@
                                             id="list-sales-count">0 รายการ</span>
                                         <span class="text-[15px] bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-bold"
                                             id="list-sales-total">0 บาท</span>
+                                        <span class="text-[15px] bg-cyan-50 text-cyan-600 px-2 py-0.5 rounded-full font-bold"
+                                            id="list-sales-capital">ทุน 0 บาท</span>
                                         <span class="text-[15px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold"
                                             id="list-sales-profit">กำไร 0 บาท</span>
                                     </div>
@@ -2353,6 +2355,7 @@
                 ['list-debt-count', 'list-debt-total', 0, 0],
                 ['list-fueltest-count', 'list-fueltest-total', 0, 0, 'ลิตร']
             ].forEach(args => setDashCountAndTotal(...args));
+            setTextIfExists('list-sales-capital', 'ทุน 0 บาท');
             setTextIfExists('list-sales-profit', 'กำไร 0 บาท');
             setMonthlyOilSummaryLoading();
 
@@ -2422,8 +2425,11 @@
 
                 const salesList = data.lists.sales;
                 const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+                const salesCapitalFromItems = salesList.reduce((sum, item) => sum + (Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0))), 0);
+                const salesCapital = Number.isFinite(Number(data.summary.capitalReturned)) ? Number(data.summary.capitalReturned) : salesCapitalFromItems;
                 const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
                 setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
+                setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
                 const salesProfitEl = document.getElementById('list-sales-profit');
                 if (salesProfitEl) {
                     salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
