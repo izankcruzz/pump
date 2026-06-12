@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-live-delta-stock-v18";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-same-day-ledger-stock-v19";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -672,14 +672,21 @@
 
   async function getArchiveBalances(toDate) {
     const db = await ensureReady();
-    const result = { capital: null, profit: null, capitalDate: null, profitDate: null };
+    const result = {
+      capital: null,
+      profit: null,
+      capitalDate: null,
+      profitDate: null,
+      capitalCreatedAt: null,
+      profitCreatedAt: null
+    };
 
     const readMonthlyCapitalNet = async () => {
       if (!toDate) return;
       const monthStart = `${String(toDate).slice(0, 7)}-01`;
       const { data, error } = await db
         .from("money_ledger")
-        .select("entry_date,net_amount,income_amount,expense_amount")
+        .select("entry_date,net_amount,income_amount,expense_amount,created_at")
         .eq("ledger_type", "capital")
         .gte("entry_date", monthStart)
         .lte("entry_date", toDate)
@@ -704,6 +711,11 @@
       }, 0);
       */
       result.capitalDate = (data || [])[0].entry_date;
+      result.capitalCreatedAt = rows
+        .map(row => row.created_at)
+        .filter(Boolean)
+        .sort()
+        .pop() || null;
     };
 
     try {
@@ -717,7 +729,7 @@
     const readDailyCapital = async useDateFilter => {
       let query = db
         .from("daily_summaries")
-        .select("summary_date,capital_balance")
+        .select("summary_date,capital_balance,created_at")
         .neq("capital_balance", 0)
         .order("summary_date", { ascending: false })
         .limit(1);
@@ -728,6 +740,7 @@
       if (!row) return;
       result.capital = Number(row.capital_balance || 0);
       result.capitalDate = row.summary_date;
+      result.capitalCreatedAt = row.created_at || null;
     };
 
     try {
@@ -742,7 +755,7 @@
     const readLedgerType = async (ledgerType, useDateFilter) => {
       let query = db
         .from("money_ledger")
-        .select("ledger_type,entry_date,balance_amount")
+        .select("ledger_type,entry_date,balance_amount,created_at")
         .eq("ledger_type", ledgerType)
         .order("entry_date", { ascending: false })
         .limit(1);
@@ -754,10 +767,12 @@
       if (ledgerType === "capital") {
         result.capital = Number(row.balance_amount || 0);
         result.capitalDate = row.entry_date;
+        result.capitalCreatedAt = row.created_at || null;
       }
       if (ledgerType === "profit") {
         result.profit = Number(row.balance_amount || 0);
         result.profitDate = row.entry_date;
+        result.profitCreatedAt = row.created_at || null;
       }
     };
 
@@ -778,17 +793,19 @@
       if (result.capital === null) {
         result.capital = Number(row.capital_balance || 0);
         result.capitalDate = row.summary_date;
+        result.capitalCreatedAt = row.created_at || null;
       }
       if (result.profit === null) {
         result.profit = Number(row.profit || 0);
         result.profitDate = row.summary_date;
+        result.profitCreatedAt = row.created_at || null;
       }
     };
 
     const readDailySummary = async useDateFilter => {
       let query = db
         .from("daily_summaries")
-        .select("summary_date,capital_balance,profit")
+        .select("summary_date,capital_balance,profit,created_at")
         .order("summary_date", { ascending: false })
         .limit(1);
       if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
@@ -813,7 +830,7 @@
     const result = { capitalReturned: 0, stockPaid: 0, profit: 0, generalExpenses: 0 };
     const startDates = [ledgerBalances.capitalDate, ledgerBalances.profitDate]
       .filter(Boolean)
-      .map(date => addDays(date, 1));
+      .map(String);
     if (startDates.length === 0) return result;
 
     const fromDate = startDates.sort()[0];
@@ -828,8 +845,13 @@
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
 
-    const capitalStart = ledgerBalances.capitalDate ? addDays(ledgerBalances.capitalDate, 1) : fromDate;
-    const profitStart = ledgerBalances.profitDate ? addDays(ledgerBalances.profitDate, 1) : fromDate;
+    const shouldApplyDelta = (day, ledgerDate, cutoff, createdAt) => {
+      if (!ledgerDate) return true;
+      if (day > ledgerDate) return true;
+      if (day < ledgerDate) return false;
+      if (!cutoff || !createdAt) return false;
+      return new Date(createdAt).getTime() > new Date(cutoff).getTime() + 1000;
+    };
 
     (salesRes.data || []).forEach(row => {
       const day = bkkDate(row.sold_at);
@@ -837,16 +859,16 @@
       const qty = Number(row.qty || 0);
       const total = Number(row.total || row.unit_price * qty || 0);
       const costTotal = Number(product.avg_cost || 0) * qty;
-      if (day >= capitalStart) result.capitalReturned += costTotal;
-      if (day >= profitStart) result.profit += total - costTotal;
+      if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.capitalReturned += costTotal;
+      if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) result.profit += total - costTotal;
     });
 
     (expensesRes.data || []).forEach(row => {
       const day = bkkDate(row.spent_at);
       const amount = Number(row.amount || 0);
       if (row.expense_type === "capital") {
-        if (day >= capitalStart) result.stockPaid += amount;
-      } else if (day >= profitStart) {
+        if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.stockPaid += amount;
+      } else if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) {
         result.generalExpenses += amount;
       }
     });
@@ -943,9 +965,9 @@
       const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
       if (saleError) throw saleError;
       if (sale && sale.product_id) {
-        const { data: product, error: productError } = await db.from("products").select("stock_qty,is_fuel").eq("id", sale.product_id).maybeSingle();
+        const { data: product, error: productError } = await db.from("products").select("stock_qty").eq("id", sale.product_id).maybeSingle();
         if (productError) throw productError;
-        if (product && !product.is_fuel) {
+        if (product) {
           const { error: stockError } = await db
             .from("products")
             .update({ stock_qty: Number(product.stock_qty || 0) + Number(sale.qty || 0) })
