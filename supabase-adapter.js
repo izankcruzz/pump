@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-capital-v15";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-capital-v16";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -685,12 +685,23 @@
         .order("entry_date", { ascending: false });
       if (error) throw error;
       if (!(data || []).length) return;
+      const rows = data || [];
+      const nets = rows.map(row => (
+        row.net_amount !== null && row.net_amount !== undefined
+          ? Number(row.net_amount || 0)
+          : Number(row.income_amount || 0) - Number(row.expense_amount || 0)
+      ));
+      const total = nets.reduce((sum, net) => sum + net, 0);
+      const duplicateMonthlyTotal = nets.find(net => net !== 0 && Math.abs((total - net) - net) < 0.01);
+      result.capital = duplicateMonthlyTotal !== undefined ? duplicateMonthlyTotal : total;
+      /*
       result.capital = (data || []).reduce((sum, row) => {
         const net = row.net_amount !== null && row.net_amount !== undefined
           ? Number(row.net_amount || 0)
           : Number(row.income_amount || 0) - Number(row.expense_amount || 0);
         return sum + net;
       }, 0);
+      */
       result.capitalDate = (data || [])[0].entry_date;
     };
 
