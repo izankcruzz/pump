@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-balance-visual-v54"></script>
+    <script src="./supabase-adapter.js?v=20260612-profit-rounding-v55"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2502,7 +2502,7 @@
                 setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
                 const salesProfitEl = document.getElementById('list-sales-profit');
                 if (salesProfitEl) {
-                    salesProfitEl.innerText = `กำไร ${Math.floor(salesProfit).toLocaleString('th-TH')} บาท`;
+                    salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
                     salesProfitEl.className = `text-[15px] ${salesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
                 }
                 if (salesList.length === 0) { document.getElementById('list-sales-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>'; } else {
@@ -2514,7 +2514,7 @@
                         const profitPerUnit = Number(item.profitPerUnit) || 0;
                         const showQty = qty.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                         const showTotal = Math.round(total).toLocaleString('th-TH');
-                        const showProfit = Math.floor(profit).toLocaleString('th-TH');
+                        const showProfit = Math.round(profit).toLocaleString('th-TH');
                         const showProfitPerUnit = profitPerUnit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         const profitClass = profit < 0 ? 'text-red-600' : 'text-emerald-600';
                         html += `<div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition">
