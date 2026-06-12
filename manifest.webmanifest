@@ -1,0 +1,30 @@
+{
+  "name": "POS ปั๊มน้ำมัน (Smart System)",
+  "short_name": "POS PUMP",
+  "description": "ระบบจัดการปั๊มน้ำมันและคลังสินค้า",
+  "start_url": "./?v=20260612-mobile-icon-v62",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "./supabase-icon-192.png?v=20260612-mobile-icon-v62",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./supabase-icon-512.png?v=20260612-mobile-icon-v62",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./supabase-icon.svg?v=20260612-mobile-icon-v62",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
