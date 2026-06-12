@@ -146,6 +146,13 @@
         return iso ? iso.slice(0, 10) : null;
       }
 
+      function hasRealDate(dateValue) {
+        const raw = text(dateValue);
+        if (!raw || /^รวม|^เธฃเธงเธก|total/i.test(raw)) return false;
+        return /^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(raw)
+          || /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/.test(raw);
+      }
+
       function isHeader(row) {
         const joined = row.map(text).join("|");
         return /วันที่|ชื่อ|สินค้า|ราคา|จำนวน|ลูกค้า|ประเภท/.test(joined);
@@ -265,7 +272,7 @@
         const data = rows.map(r => {
           const p = product(r[1]);
           return {
-            purchased_at: parseDateTime(r[0]),
+            purchased_at: hasRealDate(r[0]) ? parseDateTime(r[0]) : null,
             product_id: p && p.id,
             product_name: text(r[1]),
             unit_cost: number(r[2]),
@@ -274,7 +281,7 @@
             avg_cost_after: number(r[6]) || number(r[2]),
             note: null
           };
-        }).filter(r => r.product_name);
+        }).filter(r => r.purchased_at && r.product_name);
         await batchInsert("purchases", data);
         log(`purchases: ${data.length}`);
         await repairAverageCostsFromPurchases();
