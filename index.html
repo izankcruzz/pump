@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-line-flex-report-v51"></script>
+    <script src="./supabase-adapter.js?v=20260612-line-capital-detail-v52"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -3909,10 +3909,11 @@
                 const name = String(item.name || item.title || item.item || item.customer || '-');
                 const unit = String(item.unit || '');
                 const key = `${name}__${unit}`;
-                const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, amount: 0 };
+                const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0, amount: 0 };
                 old.qty += Number(item.qty || 0);
                 old.total += Number(item.total || 0);
                 old.profit += Number(item.profit || 0);
+                old.costTotal += Number(item.costTotal || 0);
                 old.amount += Number(item[valueKey || 'amount'] || item.amount || item.total || 0);
                 map.set(key, old);
             });
@@ -4063,7 +4064,7 @@
                 profit_gross: reportMoney(summary.profit || 0),
                 profit_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ขาย ${reportMoney(item.total)}บ. | กำไร ${reportMoney(item.profit)}บ.`),
                 capital_return: reportMoney(summary.capitalReturned || 0),
-                capital_return_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.costTotal || 0)}บ.`),
+                capital_return_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ต้นทุนรวม ${reportMoney(item.costTotal || 0)}บ.`),
                 capital: reportMoney(summary.stockPaid || 0),
                 capital_net: reportMoney(summary.capitalNet || 0),
                 capital_balance: reportMoney(summary.capitalBalance || 0),
