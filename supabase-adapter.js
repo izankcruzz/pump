@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-nonzero-capital-v14";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-capital-v15";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -673,6 +673,35 @@
     const db = await ensureReady();
     const result = { capital: null, profit: null, capitalDate: null, profitDate: null };
 
+    const readMonthlyCapitalNet = async () => {
+      if (!toDate) return;
+      const monthStart = `${String(toDate).slice(0, 7)}-01`;
+      const { data, error } = await db
+        .from("money_ledger")
+        .select("entry_date,net_amount,income_amount,expense_amount")
+        .eq("ledger_type", "capital")
+        .gte("entry_date", monthStart)
+        .lte("entry_date", toDate)
+        .order("entry_date", { ascending: false });
+      if (error) throw error;
+      if (!(data || []).length) return;
+      result.capital = (data || []).reduce((sum, row) => {
+        const net = row.net_amount !== null && row.net_amount !== undefined
+          ? Number(row.net_amount || 0)
+          : Number(row.income_amount || 0) - Number(row.expense_amount || 0);
+        return sum + net;
+      }, 0);
+      result.capitalDate = (data || [])[0].entry_date;
+    };
+
+    try {
+      await readMonthlyCapitalNet();
+    } catch (err) {
+      if (!String(err.message || "").includes("money_ledger")) {
+        console.warn("monthly capital lookup failed", err);
+      }
+    }
+
     const readDailyCapital = async useDateFilter => {
       let query = db
         .from("daily_summaries")
@@ -690,7 +719,7 @@
     };
 
     try {
-      await readDailyCapital(true);
+      if (result.capital === null) await readDailyCapital(true);
       if (result.capital === null) await readDailyCapital(false);
     } catch (err) {
       if (!String(err.message || "").includes("daily_summaries")) {
