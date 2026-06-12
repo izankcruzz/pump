@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-cutoff-v38";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-legacy-cash-v39";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -667,7 +667,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
-    const netCash = capitalReturned + headerNetProfit + debtRepaid - totalDebt;
+    const netCash = totalSales - totalDebt - generalExpenses + debtRepaid;
     const sumRowsByName = items => {
       const map = new Map();
       (items || []).forEach(item => {
