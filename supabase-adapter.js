@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-nonzero-v21";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-monthly-profit-v22";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -718,11 +718,47 @@
         .pop() || null;
     };
 
+    const readMonthlyProfitBalance = async () => {
+      if (!toDate) return;
+      const monthStart = `${String(toDate).slice(0, 7)}-01`;
+      const { data, error } = await db
+        .from("money_ledger")
+        .select("entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at")
+        .eq("ledger_type", "profit")
+        .gte("entry_date", monthStart)
+        .lte("entry_date", toDate)
+        .order("entry_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = data || [];
+      if (!rows.length) return;
+
+      const looksLikeMonthlyNetOnly = candidate => {
+        const balance = Number(candidate.balance_amount || 0);
+        const net = candidate.net_amount !== null && candidate.net_amount !== undefined
+          ? Number(candidate.net_amount || 0)
+          : Number(candidate.income_amount || 0) - Number(candidate.expense_amount || 0);
+        if (!balance || Math.abs(balance - net) > 0.01) return false;
+        return rows.some(other => Math.abs(Number(other.balance_amount || 0)) > Math.abs(balance) + 0.01);
+      };
+      const row = rows.find(candidate => Number(candidate.balance_amount || 0) !== 0 && !looksLikeMonthlyNetOnly(candidate))
+        || rows.find(candidate => Number(candidate.balance_amount || 0) !== 0)
+        || rows[0];
+      result.profit = Number(row.balance_amount || 0);
+      result.profitDate = row.entry_date;
+      result.profitCreatedAt = rows
+        .map(item => item.created_at)
+        .filter(Boolean)
+        .sort()
+        .pop() || null;
+    };
+
     try {
       await readMonthlyCapitalNet();
+      await readMonthlyProfitBalance();
     } catch (err) {
       if (!String(err.message || "").includes("money_ledger")) {
-        console.warn("monthly capital lookup failed", err);
+        console.warn("monthly ledger lookup failed", err);
       }
     }
 
@@ -793,7 +829,7 @@
     };
 
     try {
-      await readLedgerType("profit", true);
+      if (result.profit === null) await readLedgerType("profit", true);
       if (result.capital === null) await readLedgerType("capital", false);
       if (result.profit === null) await readLedgerType("profit", false);
     } catch (err) {
