@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-cumulative-v20";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-nonzero-v21";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -774,7 +774,10 @@
           if (!balance || Math.abs(balance - net) > 0.01) return false;
           return rows.some(other => Math.abs(Number(other.balance_amount || 0)) > Math.abs(balance) + 0.01);
         };
-        row = rows.find(candidate => !looksLikeMonthlyNetOnly(candidate)) || rows[0];
+        row = rows.find(candidate => Number(candidate.balance_amount || 0) !== 0 && !looksLikeMonthlyNetOnly(candidate))
+          || rows.find(candidate => Number(candidate.balance_amount || 0) !== 0)
+          || rows.find(candidate => !looksLikeMonthlyNetOnly(candidate))
+          || rows[0];
       }
       if (!row) return;
       if (ledgerType === "capital") {
