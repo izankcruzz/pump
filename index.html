@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-mobile-icon-v62"></script>
+    <script src="./supabase-adapter.js?v=20260612-sales-total-label-v61"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -20,12 +20,37 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="POS PUMP">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="manifest" href="./manifest.webmanifest?v=20260612-mobile-icon-v62">
-    <link rel="icon" type="image/svg+xml" href="./supabase-icon.svg?v=20260612-mobile-icon-v62">
-    <link rel="icon" type="image/png" sizes="192x192" href="./supabase-icon-192.png?v=20260612-mobile-icon-v62">
-    <link rel="shortcut icon" href="./supabase-icon.svg?v=20260612-mobile-icon-v62">
-    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260612-mobile-icon-v62">
-    <meta name="msapplication-TileImage" content="./supabase-icon-144.png?v=20260612-mobile-icon-v62">
+    <link rel="icon" type="image/svg+xml" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
+    <link rel="shortcut icon" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
+    <link rel="apple-touch-icon" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const manifest = {
+                "name": "POS ปั๊มน้ำมัน (Smart System)",
+                "short_name": "POS PUMP",
+                "description": "ระบบจัดการปั๊มน้ำมันและคลังสินค้า",
+                "start_url": window.location.href,
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#4f46e5",
+                "icons": [
+                    {
+                        "src": "https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612",
+                        "sizes": "any",
+                        "type": "image/svg+xml",
+                        "purpose": "any maskable"
+                    }
+                ]
+            };
+            const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+            const manifestURL = URL.createObjectURL(blob);
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = manifestURL;
+            document.head.appendChild(link);
+        });
+    </script>
 
     <script>
         tailwind.config = {
