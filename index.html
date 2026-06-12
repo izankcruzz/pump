@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-profit-rounding-v55"></script>
+    <script src="./supabase-adapter.js?v=20260612-supabase-logo-v57"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -175,9 +175,6 @@
         <button onclick="switchTab('debt')"
             class="block w-full text-left py-4 px-6 border-b border-slate-50 hover:bg-slate-50 text-slate-600 font-medium"><i
                 class="fa-solid fa-user-clock w-8 text-pink-500"></i> ค้างชำระ</button>
-        <button onclick="switchTab('expense')"
-            class="block w-full text-left py-4 px-6 border-b border-slate-50 hover:bg-slate-50 text-slate-600 font-medium"><i
-                class="fa-solid fa-file-invoice-dollar w-8 text-red-500"></i> รายจ่าย</button>
         <button onclick="switchTab('stock')"
             class="block w-full text-left py-4 px-6 border-b border-slate-50 hover:bg-slate-50 text-slate-600 font-medium"><i
                 class="fa-solid fa-boxes-packing w-8 text-blue-500"></i> ซื้อสินค้า</button>
@@ -223,10 +220,6 @@
                     class="nav-item w-full text-left py-3.5 px-5 rounded-xl transition-all flex items-center gap-4 text-sm font-medium"><i
                         class="fa-solid fa-user-clock text-lg w-5 text-center"></i>
                     <span>ลูกหนี้ค้างชำระ</span></button>
-                <button onclick="switchTab('expense')" id="pc-tab-expense"
-                    class="nav-item w-full text-left py-3.5 px-5 rounded-xl transition-all flex items-center gap-4 text-sm font-medium"><i
-                        class="fa-solid fa-file-invoice-dollar text-lg w-5 text-center"></i>
-                    <span>บันทึกรายจ่าย</span></button>
                 <button onclick="switchTab('stock')" id="pc-tab-stock"
                     class="nav-item w-full text-left py-3.5 px-5 rounded-xl transition-all flex items-center gap-4 text-sm font-medium"><i
                         class="fa-solid fa-boxes-packing text-lg w-5 text-center"></i> <span>จัดการสต็อก</span></button>
@@ -267,9 +260,6 @@
                         <button onclick="loadDashboard()" id="btn-dash-reload"
                             class="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"><i
                                 class="fa-solid fa-rotate"></i></button>
-                        <button onclick="repairFuelStockToday()" id="btn-repair-fuel-stock"
-                            class="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
-                            title="คำนวณสต๊อกน้ำมันใหม่จากชีท"><i class="fa-solid fa-calculator"></i></button>
                     </div>
                 </div>
 
@@ -475,7 +465,7 @@
                             class="flex justify-between items-center px-4 py-3 border-b border-slate-100 bg-slate-50/70">
                             <h3 class="font-bold text-slate-700 text-lg" id="daily-list-title">รายการวันนี้</h3>
                             <button onclick="sendLineReport()" id="btn-send-line"
-                                class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"><i
+                                class="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"><i
                                     class="fa-brands fa-line text-sm"></i> ส่งไลน์</button>
                         </div>
                         <div class="flex-1 overflow-y-auto p-4 space-y-5" id="daily-summary-container">
@@ -709,51 +699,6 @@
                         </div>
 
                         <div id="stock-price-content" class="hidden space-y-6"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="content-expense" class="hidden flex-1 overflow-y-auto pb-24 md:pb-0 p-4 md:p-8">
-                <div class="flex justify-between items-center mb-6 max-w-xl mx-auto">
-                    <div>
-                        <h2 class="text-2xl font-bold text-slate-800">บันทึกรายจ่าย</h2>
-                        <p class="text-xs text-slate-400">ค่าน้ำ ค่าไฟ ค่าแรง ฯลฯ</p>
-                    </div>
-                    <button onclick="openHistory('expense')"
-                        class="bg-white text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 border border-slate-200 shadow-sm text-sm font-bold transition-all"><i
-                            class="fa-solid fa-list mr-1.5 text-red-500"></i> รายการวันนี้</button>
-                </div>
-                <div class="max-w-xl mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-soft border border-slate-100">
-                    <div class="space-y-6">
-                        <div>
-                            <label
-                                class="text-xs font-bold text-slate-400 ml-1 uppercase tracking-wide">ชื่อรายการ</label>
-                            <input type="text" id="exp-title"
-                                class="w-full p-4 mt-1 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 text-lg transition-all bg-slate-50 focus:bg-white"
-                                placeholder="เช่น ค่าไฟ, ค่าแรง">
-                            <div class="flex gap-2 mt-3 overflow-x-auto no-scrollbar pb-1">
-                                <span onclick="document.getElementById('exp-title').value='ค่าไฟฟ้า'"
-                                    class="bg-yellow-50 text-yellow-700 border border-yellow-100 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer hover:bg-yellow-100 transition">⚡
-                                    ค่าไฟ</span>
-                                <span onclick="document.getElementById('exp-title').value='ค่าน้ำประปา'"
-                                    class="bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer hover:bg-blue-100 transition">💧
-                                    ค่าน้ำ</span>
-                                <span onclick="document.getElementById('exp-title').value='ค่าแรงพนักงาน'"
-                                    class="bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer hover:bg-slate-200 transition">👷
-                                    ค่าแรง</span>
-                            </div>
-                        </div>
-                        <div><label class="text-xs font-bold text-slate-400 ml-1 uppercase tracking-wide">จำนวนเงิน
-                                (บาท)</label><input type="number" id="exp-amount"
-                                class="w-full p-4 mt-1 border border-red-200 rounded-2xl text-4xl font-bold text-red-500 focus:ring-2 focus:ring-red-100 outline-none text-right bg-red-50/30"
-                                placeholder="0"></div>
-                        <div><label class="text-xs font-bold text-slate-400 ml-1 uppercase tracking-wide">หมายเหตุ
-                                (ถ้ามี)</label><input type="text" id="exp-note"
-                                class="w-full p-4 mt-1 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 focus:bg-white focus:ring-2 focus:ring-slate-100 outline-none transition-all"
-                                placeholder="..."></div>
-                        <div class="pt-2"><button onclick="submitExpense()" id="btn-exp-save"
-                                class="w-full bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white py-4 rounded-2xl font-bold text-xl shadow-lg shadow-red-200 active:scale-95 transition-all"><i
-                                    class="fa-solid fa-check-circle mr-2"></i> บันทึก</button></div>
                     </div>
                 </div>
             </div>
@@ -2125,29 +2070,6 @@
 
             closeDateRangeModal();
             loadDashboardWithRange();
-        }
-
-        function repairFuelStockToday() {
-            if (!confirm("คำนวณสต๊อกน้ำมันใหม่จากชีททั้งหมด?\nระบบจะใช้สูตร รับเข้าในรายการซื้อ - ยอดขายในรายการขาย แล้วอัปเดตคงเหลือเบนซิน/ดีเซล")) return;
-            const btn = document.getElementById('btn-repair-fuel-stock');
-            const icon = btn ? btn.querySelector('i') : null;
-            if (btn) btn.disabled = true;
-            if (icon) icon.classList.add('fa-spin');
-
-            google.script.run
-                .withSuccessHandler(message => {
-                    alert(message || "คำนวณสต๊อกน้ำมันใหม่จากชีทแล้ว");
-                    if (icon) icon.classList.remove('fa-spin');
-                    if (btn) btn.disabled = false;
-                    loadDataFromSheet();
-                    loadDashboard();
-                })
-                .withFailureHandler(err => {
-                    alert("คำนวณสต๊อกไม่สำเร็จ: " + (err.message || err));
-                    if (icon) icon.classList.remove('fa-spin');
-                    if (btn) btn.disabled = false;
-                })
-                .recalculateFuelStockFromSheets();
         }
 
         function escapeHtml(value) {
