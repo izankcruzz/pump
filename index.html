@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-product-bestseller-sort-v46"></script>
+    <script src="./supabase-adapter.js?v=20260612-qty-bestseller-no-autofill-v47"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -567,7 +567,7 @@
                     class="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-md px-4 py-3 border-b border-slate-200 shadow-sm shrink-0">
                     <div class="flex justify-between items-center gap-2">
                         <div class="relative flex-1 group">
-                            <input type="text" id="search-input" onkeyup="renderProducts()" placeholder="ค้นหา..."
+                            <input type="search" id="search-input" name="pos-product-search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" onkeyup="renderProducts()" placeholder="ค้นหา..."
                                 class="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all placeholder:text-slate-400 text-sm shadow-sm">
                             <i class="fa-solid fa-search absolute left-3.5 top-3.5 text-slate-400"></i>
                         </div>
@@ -616,7 +616,7 @@
                     class="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-md px-4 py-3 border-b border-slate-200 shadow-sm shrink-0">
                     <div class="flex justify-between items-center gap-2">
                         <div class="relative flex-1 group">
-                            <input type="text" id="stock-search-input" onkeyup="renderStockProducts()"
+                            <input type="search" id="stock-search-input" name="pos-stock-search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" onkeyup="renderStockProducts()"
                                 placeholder="ค้นหาสินค้า..."
                                 class="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 bg-white text-slate-700 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all placeholder:text-slate-400 text-sm shadow-sm">
                             <i class="fa-solid fa-search absolute left-3.5 top-3.5 text-slate-400"></i>
@@ -1593,6 +1593,12 @@
         let currentStockMode = 'receive';
         const FUEL_METER_ROLLOVER = 10000;
 
+        function clearAutofilledSearchValue(input) {
+            if (!input) return;
+            const value = String(input.value || '').trim();
+            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) input.value = '';
+        }
+
         let currentEditType = '';
         let currentEditRowIndex = 0;
         let currentStockItem = null;
@@ -1620,6 +1626,7 @@
 
             const searchInput = document.getElementById('search-input');
             if (searchInput) {
+                clearAutofilledSearchValue(searchInput);
                 searchInput.addEventListener('keyup', e => {
                     if (e.key === 'Enter') {
                         const firstProduct = document.querySelector('#product-grid > div');
@@ -1630,6 +1637,17 @@
                     }
                 });
             }
+            clearAutofilledSearchValue(document.getElementById('stock-search-input'));
+            setTimeout(() => {
+                clearAutofilledSearchValue(document.getElementById('search-input'));
+                clearAutofilledSearchValue(document.getElementById('stock-search-input'));
+                renderProducts();
+            }, 300);
+            setTimeout(() => {
+                clearAutofilledSearchValue(document.getElementById('search-input'));
+                clearAutofilledSearchValue(document.getElementById('stock-search-input'));
+                renderProducts();
+            }, 1200);
         });
 
         function toggleMenu() { document.getElementById('nav-menu').classList.toggle('hidden'); }
@@ -2181,7 +2199,7 @@
             if (!body) return { count: 0, total: 0 };
             const list = (Array.isArray(items) ? items : [])
                 .slice()
-                .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0) || (Number(b.qty) || 0) - (Number(a.qty) || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+                .sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0) || (Number(b.total) || 0) - (Number(a.total) || 0) || String(a.name || '').localeCompare(String(b.name || '')));
             if (list.length === 0) {
                 body.innerHTML = '<div class="p-3 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการขาย</div>';
                 return { count: 0, total: 0 };
@@ -2534,6 +2552,7 @@
             const grid = document.getElementById('product-grid');
             if (!grid) return;
             const searchInput = document.getElementById('search-input');
+            clearAutofilledSearchValue(searchInput);
             const term = String(searchInput ? searchInput.value : '').toLowerCase();
             const sortedProducts = (products || []).slice().sort((a, b) => {
                 const aSold = Number(a.soldRank) || 0;
@@ -2915,6 +2934,7 @@
             const grid = document.getElementById('stock-product-grid');
             if (!grid) return;
             const searchInput = document.getElementById('stock-search-input');
+            clearAutofilledSearchValue(searchInput);
             const term = String(searchInput ? searchInput.value : '').toLowerCase();
             const allItems = [...(fuels || []), ...(products || [])];
             const filtered = allItems.filter(p => String(p && p.name != null ? p.name : '').toLowerCase().includes(term));
