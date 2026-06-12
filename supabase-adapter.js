@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-day-query-v41";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-day-created-fallback-v42";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -573,13 +573,43 @@
     ]);
     for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
 
-    const sales = salesRes.data || [];
-    const expenses = expensesRes.data || [];
-    const purchases = purchasesRes.data || [];
-    const debts = debtsRes.data || [];
+    const mergeById = (primary, fallback) => {
+      const map = new Map();
+      (primary || []).forEach(row => map.set(row.id || `${map.size}`, row));
+      (fallback || []).forEach(row => {
+        const key = row.id || `${map.size}`;
+        if (!map.has(key)) map.set(key, row);
+      });
+      return Array.from(map.values());
+    };
+    const readCreatedAtFallback = async (table, select = "*", filterBuilder = null) => {
+      if (period !== "day") return [];
+      let query = db.from(table).select(select).gte("created_at", start).lte("created_at", end);
+      if (filterBuilder) query = filterBuilder(query);
+      const { data, error } = await query;
+      if (error) {
+        if (!String(error.message || "").includes("created_at")) throw error;
+        return [];
+      }
+      return data || [];
+    };
+
+    const [salesByCreated, expensesByCreated, purchasesByCreated, debtsByCreated, paymentsByCreated, testsByCreated] = await Promise.all([
+      readCreatedAtFallback("sales", "*", query => query.neq("payment_status", "void")),
+      readCreatedAtFallback("expenses"),
+      readCreatedAtFallback("purchases"),
+      readCreatedAtFallback("debts", "*", query => query.neq("status", "void")),
+      readCreatedAtFallback("debt_payments"),
+      readCreatedAtFallback("fuel_tests")
+    ]);
+
+    const sales = mergeById(salesRes.data || [], salesByCreated);
+    const expenses = mergeById(expensesRes.data || [], expensesByCreated);
+    const purchases = mergeById(purchasesRes.data || [], purchasesByCreated);
+    const debts = mergeById(debtsRes.data || [], debtsByCreated);
     const unpaidDebts = unpaidDebtsRes.data || [];
-    const payments = (paymentsRes.data || []).filter(row => row.note !== "import paid debt");
-    const tests = testsRes.data || [];
+    const payments = mergeById(paymentsRes.data || [], paymentsByCreated).filter(row => row.note !== "import paid debt");
+    const tests = mergeById(testsRes.data || [], testsByCreated);
 
     const salesList = sales.map(row => {
       const product = productByName[row.product_name] || {};
