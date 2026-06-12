@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-day-created-fallback-v42";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-edit-history-v43";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -1166,7 +1166,106 @@
     });
   }
 
-  async function updateHistoryRow() {
+  async function updateHistoryRow(type, rowIndex, form = {}) {
+    const db = await ensureReady();
+    const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
+    const positiveNumber = value => Math.max(0, Number(value || 0));
+    const meterQty = (start, end) => {
+      const a = Number(start || 0);
+      const b = Number(end || 0);
+      return Math.max(0, b >= a ? b - a : (b + 10000) - a);
+    };
+    const adjustStock = async (productId, delta) => {
+      if (!productId || Math.abs(Number(delta || 0)) < 0.0001) return;
+      const { data: product, error: productError } = await db
+        .from("products")
+        .select("stock_qty")
+        .eq("id", productId)
+        .maybeSingle();
+      if (productError) throw productError;
+      if (!product) return;
+      const nextStock = Math.max(0, Number(product.stock_qty || 0) + Number(delta || 0));
+      const { error: stockError } = await db
+        .from("products")
+        .update({ stock_qty: nextStock })
+        .eq("id", productId);
+      if (stockError) throw stockError;
+    };
+
+    if (table === "sales") {
+      const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
+      if (saleError) throw saleError;
+      if (!sale) throw new Error("ไม่พบรายการขาย");
+      const oldQty = Number(sale.qty || 0);
+      const nextQty = form.isFuel ? meterQty(form.start_meter, form.end_meter) : positiveNumber(form.qty);
+      const nextPrice = positiveNumber(form.price || sale.unit_price);
+      if (nextQty <= 0) throw new Error("จำนวนต้องมากกว่า 0");
+      const { error } = await db
+        .from("sales")
+        .update({
+          unit_price: nextPrice,
+          qty: nextQty,
+          unit: form.unit || sale.unit,
+          note: form.note || sale.note || ""
+        })
+        .eq("id", rowIndex);
+      if (error) throw error;
+      if (sale.payment_status !== "void") await adjustStock(sale.product_id, oldQty - nextQty);
+      return "แก้ไขรายการขายแล้ว";
+    }
+
+    if (table === "expenses") {
+      const { error } = await db
+        .from("expenses")
+        .update({ title: form.title || "", amount: positiveNumber(form.amount), note: form.note || null })
+        .eq("id", rowIndex);
+      if (error) throw error;
+      return "แก้ไขรายจ่ายแล้ว";
+    }
+
+    if (table === "debts") {
+      const { error } = await db
+        .from("debts")
+        .update({
+          customer_name: form.customer || "",
+          product_name: form.product || "",
+          qty: positiveNumber(form.qty),
+          amount: positiveNumber(form.amount),
+          filler_name: form.filler || null
+        })
+        .eq("id", rowIndex);
+      if (error) throw error;
+      return "แก้ไขค้างชำระแล้ว";
+    }
+
+    if (table === "purchases") {
+      const { data: purchase, error: purchaseError } = await db.from("purchases").select("*").eq("id", rowIndex).maybeSingle();
+      if (purchaseError) throw purchaseError;
+      if (!purchase) throw new Error("ไม่พบรายการรับเข้า");
+      const oldQty = Number(purchase.qty || 0);
+      const nextQty = positiveNumber(form.qty);
+      const nextTotal = positiveNumber(form.total);
+      const nextCost = nextQty > 0 ? nextTotal / nextQty : Number(purchase.unit_cost || 0);
+      if (nextQty <= 0) throw new Error("จำนวนต้องมากกว่า 0");
+      const { error } = await db
+        .from("purchases")
+        .update({ qty: nextQty, unit_cost: nextCost, avg_cost_after: nextCost })
+        .eq("id", rowIndex);
+      if (error) throw error;
+      await adjustStock(purchase.product_id, nextQty - oldQty);
+      return "แก้ไขรายการรับเข้าแล้ว";
+    }
+
+    if (table === "fuel_tests") {
+      const startMeter = positiveNumber(form.start_meter);
+      const endMeter = positiveNumber(form.end_meter);
+      const { error } = await db
+        .from("fuel_tests")
+        .update({ meter_start: startMeter, meter_end: endMeter, qty: meterQty(startMeter, endMeter) })
+        .eq("id", rowIndex);
+      if (error) throw error;
+      return "แก้ไขทดสอบน้ำมันแล้ว";
+    }
     return "ยังไม่รองรับแก้ไขในโหมด Supabase";
   }
 
