@@ -1,9 +1,10 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-rounding-v55";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-supabase-logo-v57";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
   const STORAGE_KEY = "POS_SUPABASE_ANON_KEY";
+  const SUPABASE_LOGO_URL = "https://supabase.com/dashboard/img/supabase-logo.svg";
   const FUEL_CATEGORY = "น้ำมันเชื้อเพลิง";
   const FUEL_NAMES = ["เบนซิน 95", "ดีเซล"];
   const LIVE_CUTOVER_DATE = "2026-06-12";
@@ -139,8 +140,8 @@
     wrap.innerHTML = `
       <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-white/50 p-6 space-y-4">
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
-            <i class="fa-solid fa-database text-xl"></i>
+          <div class="w-12 h-12 rounded-2xl bg-slate-950 flex items-center justify-center p-2 shadow-sm">
+            <img src="${SUPABASE_LOGO_URL}" alt="Supabase" class="w-8 h-8 object-contain">
           </div>
           <div>
             <div class="font-black text-slate-800 text-xl">เชื่อม Supabase</div>
