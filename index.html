@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-day-created-fallback-v42"></script>
+    <script src="./supabase-adapter.js?v=20260612-edit-history-v43"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -3666,6 +3666,10 @@
                     if (['sale', 'stock', 'fuel', 'expense', 'debt'].includes(currentEditType)) loadDashboard();
                     openHistory(currentEditType);
                 }
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).withFailureHandler(e => {
+                alert("❌ แก้ไขไม่สำเร็จ: " + e.message);
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }).updateHistoryRow(currentEditType, currentEditRowIndex, form);
