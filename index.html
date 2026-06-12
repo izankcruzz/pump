@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-monthly-groups-v37"></script>
+    <script src="./supabase-adapter.js?v=20260612-ledger-cutoff-v38"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2303,8 +2303,11 @@
 
             google.script.run.withSuccessHandler(data => {
                 // Format date range for display (วัน/เดือน/ปี)
+                const effectiveTo = data && data.monthlyOilSummary && data.monthlyOilSummary.cutoffTo
+                    ? data.monthlyOilSummary.cutoffTo
+                    : currentDateRange.to;
                 const fParts = currentDateRange.from.split('-');
-                const tParts = currentDateRange.to.split('-');
+                const tParts = effectiveTo.split('-');
                 const dateDisplay = `${fParts[2]}/${fParts[1]}/${fParts[0]} - ${tParts[2]}/${tParts[1]}/${tParts[0]}`;
 
                 const titleEl = document.getElementById('dash-main-title');
