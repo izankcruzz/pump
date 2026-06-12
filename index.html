@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-capital-carry-row-v36"></script>
+    <script src="./supabase-adapter.js?v=20260612-monthly-groups-v37"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2181,7 +2181,7 @@
             if (!body) return { count: 0, total: 0 };
             const list = (Array.isArray(items) ? items : [])
                 .slice()
-                .sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0) || (Number(b.total) || 0) - (Number(a.total) || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+                .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0) || (Number(b.qty) || 0) - (Number(a.qty) || 0) || String(a.name || '').localeCompare(String(b.name || '')));
             if (list.length === 0) {
                 body.innerHTML = '<div class="p-3 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการขาย</div>';
                 return { count: 0, total: 0 };
