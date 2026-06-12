@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-sales-total-label-v61-gas95-first";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-sales-total-label-v61-month-live-sales";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -582,14 +582,6 @@
 
     const requestedTo = to;
     const periodLedger = await getArchiveBalances(to, period, from);
-    const hasImportedPeriodLedger = periodLedger.periodCapitalIncome !== null
-      || periodLedger.periodProfitNet !== null
-      || periodLedger.capitalDate
-      || periodLedger.profitDate;
-    const ledgerCutoff = [periodLedger.capitalDate, periodLedger.profitDate].filter(Boolean).sort().pop();
-    const shouldUseLedgerCutoff = period === "month" || period === "range";
-    const queryTo = shouldUseLedgerCutoff && hasImportedPeriodLedger && ledgerCutoff && ledgerCutoff < to ? ledgerCutoff : to;
-    to = queryTo;
 
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
