@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-sales-capital-badge-v59"></script>
+    <script src="./supabase-adapter.js?v=20260612-mobile-icon-v62"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -20,38 +20,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="POS PUMP">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="icon" type="image/svg+xml" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
-    <link rel="shortcut icon" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
-    <link rel="apple-touch-icon" href="https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612">
-
-    <script>
-        
-        document.addEventListener("DOMContentLoaded", function() {
-            const manifest = {
-                "name": "POS ปั๊มน้ำมัน (Smart System)",
-                "short_name": "POS PUMP",
-                "description": "ระบบจัดการปั๊มน้ำมันและคลังสินค้า",
-                "start_url": window.location.href, 
-                "display": "standalone",
-                "background_color": "#ffffff",
-                "theme_color": "#4f46e5",
-                "icons": [
-                    {
-                        "src": "https://supabase.com/dashboard/img/supabase-logo.svg?v=20260612",
-                        "sizes": "any",
-                        "type": "image/svg+xml",
-                        "purpose": "any maskable"
-                    }
-                ]
-            };
-            const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-            const manifestURL = URL.createObjectURL(blob);
-            const link = document.createElement('link');
-            link.rel = 'manifest';
-            link.href = manifestURL;
-            document.head.appendChild(link);
-        });
-    </script>
+    <link rel="manifest" href="./manifest.webmanifest?v=20260612-mobile-icon-v62">
+    <link rel="icon" type="image/svg+xml" href="./supabase-icon.svg?v=20260612-mobile-icon-v62">
+    <link rel="icon" type="image/png" sizes="192x192" href="./supabase-icon-192.png?v=20260612-mobile-icon-v62">
+    <link rel="shortcut icon" href="./supabase-icon.svg?v=20260612-mobile-icon-v62">
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260612-mobile-icon-v62">
+    <meta name="msapplication-TileImage" content="./supabase-icon-144.png?v=20260612-mobile-icon-v62">
 
     <script>
         tailwind.config = {
@@ -479,7 +453,7 @@
                                         <span class="text-[15px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full"
                                             id="list-sales-count">0 รายการ</span>
                                         <span class="text-[15px] bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-bold"
-                                            id="list-sales-total">0 บาท</span>
+                                            id="list-sales-total">รวม 0 บาท</span>
                                         <span class="text-[15px] bg-cyan-50 text-cyan-600 px-2 py-0.5 rounded-full font-bold"
                                             id="list-sales-capital">ทุน 0 บาท</span>
                                         <span class="text-[15px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold"
@@ -2355,6 +2329,7 @@
                 ['list-debt-count', 'list-debt-total', 0, 0],
                 ['list-fueltest-count', 'list-fueltest-total', 0, 0, 'ลิตร']
             ].forEach(args => setDashCountAndTotal(...args));
+            setTextIfExists('list-sales-total', 'รวม 0 บาท');
             setTextIfExists('list-sales-capital', 'ทุน 0 บาท');
             setTextIfExists('list-sales-profit', 'กำไร 0 บาท');
             setMonthlyOilSummaryLoading();
@@ -2429,6 +2404,7 @@
                 const salesCapital = Number.isFinite(Number(data.summary.capitalReturned)) ? Number(data.summary.capitalReturned) : salesCapitalFromItems;
                 const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
                 setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
+                setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
                 setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
                 const salesProfitEl = document.getElementById('list-sales-profit');
                 if (salesProfitEl) {
@@ -2436,12 +2412,24 @@
                     salesProfitEl.className = `text-[15px] ${salesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
                 }
                 if (salesList.length === 0) { document.getElementById('list-sales-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>'; } else {
+                    const groupedSalesList = Array.from(salesList.reduce((map, item) => {
+                        const name = String(item.name || '-');
+                        const unit = String(item.unit || 'หน่วย');
+                        const key = `${name}__${unit}`;
+                        const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0 };
+                        old.qty += Number(item.qty) || 0;
+                        old.total += Number(item.total) || 0;
+                        old.profit += Number(item.profit) || 0;
+                        old.costTotal += Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0));
+                        map.set(key, old);
+                        return map;
+                    }, new Map()).values()).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
                     let html = '<div class="space-y-2">';
-                    salesList.forEach(item => {
+                    groupedSalesList.forEach(item => {
                         const qty = Number(item.qty) || 0;
                         const total = Number(item.total) || 0;
                         const profit = Number(item.profit) || 0;
-                        const profitPerUnit = Number(item.profitPerUnit) || 0;
+                        const profitPerUnit = qty > 0 ? profit / qty : 0;
                         const showQty = qty.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                         const showTotal = Math.round(total).toLocaleString('th-TH');
                         const showProfit = Math.round(profit).toLocaleString('th-TH');
