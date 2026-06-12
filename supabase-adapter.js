@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-monthly-groups-v37";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-cutoff-v38";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -540,6 +540,16 @@
       to = customDate;
     }
 
+    const requestedTo = to;
+    const periodLedger = await getArchiveBalances(to, period, from);
+    const hasImportedPeriodLedger = periodLedger.periodCapitalIncome !== null
+      || periodLedger.periodProfitNet !== null
+      || periodLedger.capitalDate
+      || periodLedger.profitDate;
+    const ledgerCutoff = [periodLedger.capitalDate, periodLedger.profitDate].filter(Boolean).sort().pop();
+    const queryTo = hasImportedPeriodLedger && ledgerCutoff && ledgerCutoff < to ? ledgerCutoff : to;
+    to = queryTo;
+
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
     const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
@@ -632,7 +642,6 @@
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const liveStockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
-    const periodLedger = await getArchiveBalances(to, period, from);
     const balanceDate = bkkDate();
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
@@ -745,7 +754,9 @@
         debtTotal: totalDebt,
         repaidTotal: debtRepaid,
         sales: { fuel: fuelSales, engineOil: engineOilSales },
-        profitItems: bestSellerItems
+        profitItems: bestSellerItems,
+        requestedTo,
+        cutoffTo: to
       }
     };
   }
