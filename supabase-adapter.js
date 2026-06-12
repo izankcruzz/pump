@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-local-month-v40";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-day-query-v41";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -556,7 +556,8 @@
       || periodLedger.capitalDate
       || periodLedger.profitDate;
     const ledgerCutoff = [periodLedger.capitalDate, periodLedger.profitDate].filter(Boolean).sort().pop();
-    const queryTo = hasImportedPeriodLedger && ledgerCutoff && ledgerCutoff < to ? ledgerCutoff : to;
+    const shouldUseLedgerCutoff = period === "month" || period === "range";
+    const queryTo = shouldUseLedgerCutoff && hasImportedPeriodLedger && ledgerCutoff && ledgerCutoff < to ? ledgerCutoff : to;
     to = queryTo;
 
     const start = `${from}T00:00:00+07:00`;
