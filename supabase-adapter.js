@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-rows-total-balances-v31";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-rows-latest-balances-v32";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -619,22 +619,24 @@
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const liveStockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
-    const ledgerBalances = await getArchiveBalances(to, period, from);
-    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
-    const capitalReturned = ledgerBalances.periodCapitalIncome !== null
-      ? ledgerBalances.periodCapitalIncome
+    const periodLedger = await getArchiveBalances(to, period, from);
+    const balanceDate = bkkDate();
+    const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
+    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
+    const capitalReturned = periodLedger.periodCapitalIncome !== null
+      ? periodLedger.periodCapitalIncome
       : liveCapitalReturned;
-    const stockPaid = ledgerBalances.periodCapitalExpense !== null
-      ? ledgerBalances.periodCapitalExpense
+    const stockPaid = periodLedger.periodCapitalExpense !== null
+      ? periodLedger.periodCapitalExpense
       : liveStockPaid;
-    const generalExpenses = ledgerBalances.periodProfitExpense !== null
-      ? ledgerBalances.periodProfitExpense
+    const generalExpenses = periodLedger.periodProfitExpense !== null
+      ? periodLedger.periodProfitExpense
       : liveGeneralExpenses;
-    const profit = ledgerBalances.periodProfitIncome !== null
-      ? ledgerBalances.periodProfitIncome
+    const profit = periodLedger.periodProfitIncome !== null
+      ? periodLedger.periodProfitIncome
       : liveProfit;
-    const headerNetProfit = ledgerBalances.periodProfitNet !== null
-      ? ledgerBalances.periodProfitNet
+    const headerNetProfit = periodLedger.periodProfitNet !== null
+      ? periodLedger.periodProfitNet
       : liveProfit - liveGeneralExpenses;
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
