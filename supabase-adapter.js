@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-same-day-ledger-stock-v19";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-profit-cumulative-v20";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -755,14 +755,27 @@
     const readLedgerType = async (ledgerType, useDateFilter) => {
       let query = db
         .from("money_ledger")
-        .select("ledger_type,entry_date,balance_amount,created_at")
+        .select("ledger_type,entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at")
         .eq("ledger_type", ledgerType)
         .order("entry_date", { ascending: false })
-        .limit(1);
+        .order("created_at", { ascending: false })
+        .limit(30);
       if (useDateFilter && toDate) query = query.lte("entry_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
-      const row = (data || [])[0];
+      const rows = data || [];
+      let row = rows[0];
+      if (ledgerType === "profit") {
+        const looksLikeMonthlyNetOnly = candidate => {
+          const balance = Number(candidate.balance_amount || 0);
+          const net = candidate.net_amount !== null && candidate.net_amount !== undefined
+            ? Number(candidate.net_amount || 0)
+            : Number(candidate.income_amount || 0) - Number(candidate.expense_amount || 0);
+          if (!balance || Math.abs(balance - net) > 0.01) return false;
+          return rows.some(other => Math.abs(Number(other.balance_amount || 0)) > Math.abs(balance) + 0.01);
+        };
+        row = rows.find(candidate => !looksLikeMonthlyNetOnly(candidate)) || rows[0];
+      }
       if (!row) return;
       if (ledgerType === "capital") {
         result.capital = Number(row.balance_amount || 0);
@@ -1059,8 +1072,8 @@
   async function debugArchiveBalances(toDate = bkkDate()) {
     const db = await ensureReady();
     const [capital, profit, balances] = await Promise.all([
-      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "capital").order("entry_date", { ascending: false }).limit(3),
-      db.from("money_ledger").select("ledger_type,entry_date,balance_amount").eq("ledger_type", "profit").order("entry_date", { ascending: false }).limit(3),
+      db.from("money_ledger").select("ledger_type,entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at").eq("ledger_type", "capital").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
+      db.from("money_ledger").select("ledger_type,entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at").eq("ledger_type", "profit").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
       getArchiveBalances(toDate)
     ]);
     return {
