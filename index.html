@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-period-rows-latest-balances-v32"></script>
+    <script src="./supabase-adapter.js?v=20260612-month-cash-legacy-v34"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2310,19 +2310,20 @@
                 const titleEl = document.getElementById('dash-main-title');
                 if (titleEl) titleEl.innerHTML = `📊 สรุปยอด <span class="text-purple-600">${dateDisplay}</span>`;
 
-                setTextIfExists('dash-sales', (data.summary.sales || 0).toLocaleString());
-                setTextIfExists('dash-expenses', (data.summary.expenses || 0).toLocaleString());
-                setTextIfExists('dash-debt', (data.summary.debt || 0).toLocaleString());
-                setTextIfExists('dash-debt-source', (data.summary.debt || 0).toLocaleString());
-                setTextIfExists('dash-repaid', (data.summary.debtRepaid || 0).toLocaleString());
-                setTextIfExists('dash-repaid-source', (data.summary.debtRepaid || 0).toLocaleString());
-                setTextIfExists('dash-cash', (data.summary.cash || 0).toLocaleString());
-                setTextIfExists('dash-cash-source', (data.summary.cash || 0).toLocaleString());
-                setTextIfExists('dash-profit', (data.summary.netProfit || 0).toLocaleString());
-                setTextIfExists('dash-profit-balance', `กำไรคงเหลือ ${(data.summary.profitBalance || 0).toLocaleString('th-TH')}`);
-                setTextIfExists('dash-capital', (data.summary.capitalBalance || 0).toLocaleString());
-                setTextIfExists('dash-capital-detail', `ทุนเข้า ${(data.summary.capitalReturned || 0).toLocaleString('th-TH')} | ซื้อ ${(data.summary.stockPaid || 0).toLocaleString('th-TH')}`);
-                setTextIfExists('dash-capital-day', (data.summary.capitalReturned || 0).toLocaleString());
+                const fmt0 = value => (Number(value) || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 });
+                setTextIfExists('dash-sales', fmt0(data.summary.sales));
+                setTextIfExists('dash-expenses', fmt0(data.summary.expenses));
+                setTextIfExists('dash-debt', fmt0(data.summary.debt));
+                setTextIfExists('dash-debt-source', fmt0(data.summary.debt));
+                setTextIfExists('dash-repaid', fmt0(data.summary.debtRepaid));
+                setTextIfExists('dash-repaid-source', fmt0(data.summary.debtRepaid));
+                setTextIfExists('dash-cash', fmt0(data.summary.cash));
+                setTextIfExists('dash-cash-source', fmt0(data.summary.cash));
+                setTextIfExists('dash-profit', fmt0(data.summary.netProfit));
+                setTextIfExists('dash-profit-balance', `กำไรคงเหลือ ${fmt0(data.summary.profitBalance)}`);
+                setTextIfExists('dash-capital', fmt0(data.summary.capitalBalance));
+                setTextIfExists('dash-capital-detail', `ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)}`);
+                setTextIfExists('dash-capital-day', fmt0(data.summary.capitalReturned));
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
 
