@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-product-bestseller-sort-v46";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-qty-bestseller-no-autofill-v47";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -763,9 +763,14 @@
       });
       return Array.from(map.values()).sort((a, b) => b.total - a.total || b.qty - a.qty || a.name.localeCompare(b.name));
     };
+    const sortByQtySold = items => (items || [])
+      .slice()
+      .sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0)
+        || (Number(b.total) || 0) - (Number(a.total) || 0)
+        || String(a.name || "").localeCompare(String(b.name || "")));
     const fuelSales = sumRowsByName(salesList.filter(row => row.isFuel));
     const engineOilSales = sumRowsByName(salesList.filter(row => !row.isFuel));
-    const bestSellerItems = sumRowsByName(salesList);
+    const bestSellerItems = sortByQtySold(sumRowsByName(salesList));
     const monthlyPayments = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type !== "stock")];
 
     return {
