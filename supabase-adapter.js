@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-unpaid-debt-v26";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-ledger-header-profit-v28";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -556,7 +556,7 @@
     const expenses = expensesRes.data || [];
     const debts = debtsRes.data || [];
     const unpaidDebts = unpaidDebtsRes.data || [];
-    const payments = paymentsRes.data || [];
+    const payments = (paymentsRes.data || []).filter(row => row.note !== "import paid debt");
     const tests = testsRes.data || [];
 
     const salesList = sales.map(row => {
@@ -617,6 +617,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : profit - generalExpenses;
+    const headerNetProfit = ledgerBalances.profit !== null ? profitBalance : profit - generalExpenses;
 
     return {
       summary: {
@@ -625,7 +626,7 @@
         debt: totalDebt,
         cash: totalSales + debtRepaid - totalExpenses,
         profit,
-        netProfit: profit - generalExpenses,
+        netProfit: headerNetProfit,
         actualReceived: totalSales + debtRepaid,
         grocery: 0,
         stockPaid,
@@ -659,7 +660,7 @@
         data: {
           sales: [totalSales],
           cash: [totalSales + debtRepaid - totalExpenses],
-          profit: [profit - generalExpenses]
+          profit: [headerNetProfit]
         }
       },
       monthlyOilSummary: {
