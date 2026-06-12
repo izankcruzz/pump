@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-period-ledger-v29";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-strict-ledger-date-v30";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -769,7 +769,7 @@
         .neq("capital_balance", 0)
         .order("summary_date", { ascending: false })
         .limit(1);
-      if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("summary_date", startDate).lte("summary_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       const row = (data || [])[0];
@@ -781,7 +781,6 @@
 
     try {
       if (result.capital === null) await readDailyCapital(true);
-      if (result.capital === null) await readDailyCapital(false);
     } catch (err) {
       if (!String(err.message || "").includes("daily_summaries")) {
         console.warn("daily capital lookup failed", err);
@@ -796,7 +795,7 @@
         .order("entry_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(30);
-      if (useDateFilter && toDate) query = query.lte("entry_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("entry_date", startDate).lte("entry_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       const rows = data || [];
@@ -830,8 +829,7 @@
 
     try {
       if (result.profit === null) await readLedgerType("profit", true);
-      if (result.capital === null) await readLedgerType("capital", false);
-      if (result.profit === null) await readLedgerType("profit", false);
+      if (result.capital === null) await readLedgerType("capital", true);
     } catch (err) {
       if (!String(err.message || "").includes("money_ledger")) {
         console.warn("money_ledger balance lookup failed", err);
@@ -860,7 +858,7 @@
         .select("summary_date,capital_balance,profit,created_at")
         .order("summary_date", { ascending: false })
         .limit(1);
-      if (useDateFilter && toDate) query = query.lte("summary_date", toDate);
+      if (useDateFilter && toDate) query = query.gte("summary_date", startDate).lte("summary_date", toDate);
       const { data, error } = await query;
       if (error) throw error;
       applyDailySummary((data || [])[0]);
@@ -868,7 +866,6 @@
 
     try {
       await readDailySummary(true);
-      if (result.capital === null || result.profit === null) await readDailySummary(false);
     } catch (err) {
       if (!String(err.message || "").includes("daily_summaries")) {
         console.warn("daily_summaries balance lookup failed", err);
