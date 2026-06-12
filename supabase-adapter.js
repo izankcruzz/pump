@@ -1,11 +1,12 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-no-import-fallback-v44";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-live-day-source-filter-v45";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
   const STORAGE_KEY = "POS_SUPABASE_ANON_KEY";
   const FUEL_CATEGORY = "น้ำมันเชื้อเพลิง";
   const FUEL_NAMES = ["เบนซิน 95", "ดีเซล"];
+  const LIVE_CUTOVER_DATE = "2026-06-12";
 
   let client = null;
   let authReadyResolve;
@@ -562,8 +563,13 @@
 
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
+    let salesQuery = db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void");
+    if (period === "day" && from === to && from >= LIVE_CUTOVER_DATE) {
+      salesQuery = salesQuery.neq("source", "sheet-import");
+    }
+
     const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
-      db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
+      salesQuery,
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
       db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
       db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
