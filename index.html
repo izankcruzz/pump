@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260612-qty-bestseller-no-autofill-v47"></script>
+    <script src="./supabase-adapter.js?v=20260612-out-of-stock-last-v48"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2555,14 +2555,14 @@
             clearAutofilledSearchValue(searchInput);
             const term = String(searchInput ? searchInput.value : '').toLowerCase();
             const sortedProducts = (products || []).slice().sort((a, b) => {
-                const aSold = Number(a.soldRank) || 0;
-                const bSold = Number(b.soldRank) || 0;
-                const soldDiff = bSold - aSold;
-                if (soldDiff !== 0) return soldDiff;
                 const aStock = Number(a.stock) || 0;
                 const bStock = Number(b.stock) || 0;
                 if (aStock <= 0 && bStock > 0) return 1;
                 if (bStock <= 0 && aStock > 0) return -1;
+                const aSold = Number(a.soldRank) || 0;
+                const bSold = Number(b.soldRank) || 0;
+                const soldDiff = bSold - aSold;
+                if (soldDiff !== 0) return soldDiff;
                 return String(a.name || '').localeCompare(String(b.name || ''));
             });
             const allItems = [...(fuels || []), ...sortedProducts];
