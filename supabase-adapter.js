@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-month-capital-v16";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-live-delta-stock-v18";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -607,11 +607,12 @@
     const stockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const generalExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
     const ledgerBalances = await getArchiveBalances(to);
+    const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, to);
     const capitalBalance = ledgerBalances.capital !== null
-      ? ledgerBalances.capital
+      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
       : capitalReturned - stockPaid;
     const profitBalance = ledgerBalances.profit !== null
-      ? ledgerBalances.profit
+      ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : profit - generalExpenses;
 
     return {
@@ -632,10 +633,10 @@
         profitBalance,
         openingCapitalBalance: ledgerBalances.capital,
         openingProfitBalance: ledgerBalances.profit,
-        balanceDeltaCapitalReturned: 0,
-        balanceDeltaStockPaid: 0,
-        balanceDeltaProfit: 0,
-        balanceDeltaGeneralExpenses: 0,
+        balanceDeltaCapitalReturned: balanceDeltas.capitalReturned,
+        balanceDeltaStockPaid: balanceDeltas.stockPaid,
+        balanceDeltaProfit: balanceDeltas.profit,
+        balanceDeltaGeneralExpenses: balanceDeltas.generalExpenses,
         generalExpenses
       },
       prices: {
@@ -937,6 +938,39 @@
   async function deleteHistoryRow(type, rowIndex) {
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
+
+    if (table === "sales") {
+      const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
+      if (saleError) throw saleError;
+      if (sale && sale.product_id) {
+        const { data: product, error: productError } = await db.from("products").select("stock_qty,is_fuel").eq("id", sale.product_id).maybeSingle();
+        if (productError) throw productError;
+        if (product && !product.is_fuel) {
+          const { error: stockError } = await db
+            .from("products")
+            .update({ stock_qty: Number(product.stock_qty || 0) + Number(sale.qty || 0) })
+            .eq("id", sale.product_id);
+          if (stockError) throw stockError;
+        }
+      }
+    }
+
+    if (table === "purchases") {
+      const { data: purchase, error: purchaseError } = await db.from("purchases").select("*").eq("id", rowIndex).maybeSingle();
+      if (purchaseError) throw purchaseError;
+      if (purchase && purchase.product_id) {
+        const { data: product, error: productError } = await db.from("products").select("stock_qty").eq("id", purchase.product_id).maybeSingle();
+        if (productError) throw productError;
+        if (product) {
+          const { error: stockError } = await db
+            .from("products")
+            .update({ stock_qty: Math.max(0, Number(product.stock_qty || 0) - Number(purchase.qty || 0)) })
+            .eq("id", purchase.product_id);
+          if (stockError) throw stockError;
+        }
+      }
+    }
+
     const { error } = await db.from(table).delete().eq("id", rowIndex);
     if (error) throw error;
     return "ลบแล้ว";
