@@ -280,6 +280,10 @@
                                 <span class="font-black text-slate-800" id="dash-profit">...</span>
                             </div>
                             <div class="flex items-center justify-between gap-3 rounded-lg bg-orange-50/70 px-3 py-2">
+                                <span class="font-bold text-orange-600"><i class="fa-solid fa-minus w-4"></i> จ่ายเงินทุน</span>
+                                <span class="font-black text-slate-800" id="dash-stock-paid-source">...</span>
+                            </div>
+                            <div class="flex items-center justify-between gap-3 rounded-lg bg-orange-50/70 px-3 py-2">
                                 <span class="font-bold text-orange-600"><i class="fa-solid fa-minus w-4"></i> ค้างชำระ</span>
                                 <span class="font-black text-slate-800" id="dash-debt-source">...</span>
                             </div>
@@ -2486,7 +2490,7 @@
             const icon = btn.querySelector('i');
             if (icon) icon.classList.add('fa-spin');
             btn.disabled = true;
-            ['dash-sales', 'dash-expenses', 'dash-debt', 'dash-debt-source', 'dash-cash', 'dash-cash-source', 'dash-profit', 'dash-capital', 'dash-capital-day', 'dash-repaid', 'dash-repaid-source'].forEach(id => setTextIfExists(id, "..."));
+            ['dash-sales', 'dash-expenses', 'dash-debt', 'dash-debt-source', 'dash-stock-paid-source', 'dash-cash', 'dash-cash-source', 'dash-profit', 'dash-capital', 'dash-capital-day', 'dash-repaid', 'dash-repaid-source'].forEach(id => setTextIfExists(id, "..."));
             setTextIfExists('dash-profit-balance', "...");
             setTextIfExists('dash-capital-detail', "...");
             setTextIfExists('dash-capital-day-detail', "...");
@@ -2512,6 +2516,7 @@
                 setTextIfExists('dash-expenses', fmt0(data.summary.expenses));
                 setTextIfExists('dash-debt', fmt0(data.summary.debt));
                 setTextIfExists('dash-debt-source', fmt0(data.summary.debt));
+                setTextIfExists('dash-stock-paid-source', fmt0(data.summary.stockPaid));
                 setTextIfExists('dash-repaid', fmt0(data.summary.debtRepaid));
                 setTextIfExists('dash-repaid-source', fmt0(data.summary.debtRepaid));
                 setTextIfExists('dash-cash', fmt0(data.summary.cash));
@@ -2550,7 +2555,7 @@
             const icon = btn.querySelector('i');
             if (icon) icon.classList.add('fa-spin');
             btn.disabled = true;
-            ['dash-sales', 'dash-expenses', 'dash-debt', 'dash-debt-source', 'dash-cash', 'dash-cash-source', 'dash-profit', 'dash-capital', 'dash-capital-day', 'dash-repaid', 'dash-repaid-source'].forEach(id => setTextIfExists(id, "..."));
+            ['dash-sales', 'dash-expenses', 'dash-debt', 'dash-debt-source', 'dash-stock-paid-source', 'dash-cash', 'dash-cash-source', 'dash-profit', 'dash-capital', 'dash-capital-day', 'dash-repaid', 'dash-repaid-source'].forEach(id => setTextIfExists(id, "..."));
             setTextIfExists('dash-profit-balance', "...");
             setTextIfExists('dash-capital-detail', "...");
             setTextIfExists('dash-capital-day-detail', "...");
@@ -2618,6 +2623,7 @@
                 setTextIfExists('dash-expenses', data.summary.expenses.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-debt', data.summary.debt.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-debt-source', data.summary.debt.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
+                setTextIfExists('dash-stock-paid-source', data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-cash', data.summary.cash.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-cash-source', data.summary.cash.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-profit', data.summary.netProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
