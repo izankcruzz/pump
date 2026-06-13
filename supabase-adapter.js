@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-full-width-daily-sections-v79";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-capital-wallet-v80";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -444,7 +444,10 @@
     const db = await ensureReady();
     const rows = await productRows();
     const byName = Object.fromEntries(rows.map(row => [row.name, row]));
-    const purchases = [];
+    const insertWalletEntry = async entry => {
+      const { error } = await db.from("capital_wallet_entries").insert(entry);
+      if (error) throw error;
+    };
     for (const item of items || []) {
       if (item.type === "cashExpense" || item.type === "capitalExpense") {
         const { error } = await db.from("expenses").insert({
@@ -454,23 +457,53 @@
           expense_type: item.type === "capitalExpense" ? "capital" : "expense"
         });
         if (error) throw error;
+        if (item.paymentSource === "wallet") {
+          await insertWalletEntry({
+            tx_type: "use",
+            amount: Number(item.totalPrice || item.pricePerUnit || 0),
+            note: item.productName || "ใช้เงินฝากทุน",
+            ref_type: "expense"
+          });
+        }
         continue;
       }
       const product = byName[item.productName];
       if (!product) throw new Error(`ไม่พบสินค้า: ${item.productName}`);
-      purchases.push({
+      const purchase = {
         product_id: product.id,
         qty: Number(item.qty || 0),
         unit_cost: Number(item.pricePerUnit || 0),
         new_sale_price: item.salePrice ? Number(item.salePrice) : null,
         note: ""
-      });
-    }
-    if (purchases.length) {
-      const { error } = await db.rpc("app_create_purchase", { p_items: purchases });
+      };
+      const { data, error } = await db.rpc("app_create_purchase", { p_items: [purchase] });
       if (error) throw error;
+      if (item.paymentSource === "wallet") {
+        const inserted = (data || [])[0] || {};
+        await insertWalletEntry({
+          tx_type: "use",
+          amount: Number(item.totalPrice || 0),
+          note: `ใช้เงินฝากซื้อ: ${item.productName}`,
+          ref_type: "purchase",
+          ref_id: inserted.inserted_id || null
+        });
+      }
     }
     return "บันทึกรับสินค้าแล้ว";
+  }
+
+  async function saveCapitalWalletEntry(form) {
+    const db = await ensureReady();
+    const amount = Number(form.amount || 0);
+    const txType = ["deposit", "adjust"].includes(form.type) ? form.type : "deposit";
+    if (amount <= 0) throw new Error("จำนวนเงินต้องมากกว่า 0");
+    const { error } = await db.from("capital_wallet_entries").insert({
+      tx_type: txType,
+      amount,
+      note: form.note || (txType === "deposit" ? "ฝากเงินทุนล่วงหน้า" : "ปรับยอดเงินฝากทุน")
+    });
+    if (error) throw error;
+    return txType === "deposit" ? "บันทึกฝากเงินทุนแล้ว" : "ปรับยอดเงินฝากทุนแล้ว";
   }
 
   async function getDebtPageData() {
@@ -638,6 +671,19 @@
     const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = mergeById(paymentsRes.data || [], paymentsByCreated).filter(row => row.note !== "import paid debt");
     const tests = mergeById(testsRes.data || [], testsByCreated);
+    let walletEntries = [];
+    try {
+      const { data: walletData, error: walletError } = await db
+        .from("capital_wallet_entries")
+        .select("*")
+        .gte("tx_at", start)
+        .lte("tx_at", end);
+      if (walletError) throw walletError;
+      walletEntries = walletData || [];
+    } catch (err) {
+      if (!String(err.message || "").includes("capital_wallet_entries")) throw err;
+      console.warn("capital wallet entries unavailable", err);
+    }
 
     const salesList = sales.map(row => {
       const product = productByName[row.product_name] || {};
@@ -705,11 +751,21 @@
       time: thaiTime(row.tested_at),
       qty: Number(row.qty || 0)
     }));
+    const walletList = walletEntries.map(row => ({
+      id: row.id,
+      type: row.tx_type,
+      amount: Number(row.amount || 0),
+      note: row.note || "",
+      day: bkkDate(row.tx_at)
+    }));
 
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
     const totalDebt = periodDebtList.reduce((sum, row) => sum + row.amount, 0);
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
+    const walletDeposit = walletList.filter(row => row.type === "deposit").reduce((sum, row) => sum + row.amount, 0);
+    const walletUsed = walletList.filter(row => row.type === "use").reduce((sum, row) => sum + row.amount, 0);
+    const walletAdjust = walletList.filter(row => row.type === "adjust").reduce((sum, row) => sum + row.amount, 0);
     const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
@@ -729,7 +785,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
-    const netCash = totalSales - totalDebt - generalExpenses + debtRepaid;
+    const netCash = totalSales + walletUsed - totalDebt - generalExpenses + debtRepaid;
     const sumRowsByName = items => {
       const map = new Map();
       (items || []).forEach(item => {
@@ -772,28 +828,33 @@
       chartDays.push(day);
       if (chartDays.length > 370) break;
     }
-    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 }]));
+    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 }]));
     salesList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
       chartByDay[day].total += Number(row.total || 0);
       chartByDay[day].capital += Number(row.costTotal || 0);
       chartByDay[day].profit += Number(row.profit || 0);
     });
     purchaseList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
       chartByDay[day].stockPaid += Number(row.amount || 0);
     });
     expenseList.filter(row => row.type === "stock").forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
       chartByDay[day].stockPaid += Number(row.amount || 0);
     });
     periodDebtList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
       chartByDay[day].debt += Number(row.amount || 0);
+    });
+    walletList.filter(row => row.type === "use").forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      chartByDay[day].walletUsed += Number(row.amount || 0);
     });
     return {
       summary: {
@@ -807,6 +868,10 @@
         grocery: 0,
         stockPaid,
         debtRepaid,
+        walletDeposit,
+        walletUsed,
+        walletAdjust,
+        walletBalance: walletDeposit + walletAdjust - walletUsed,
         capitalReturned,
         capitalNet: capitalReturned - stockPaid,
         capitalBalance,
@@ -829,6 +894,7 @@
         capital: capitalItems,
         debts: periodDebtList,
         repayments: repayList,
+        wallet: walletList,
         fuelTests
       },
       chart: {
@@ -838,6 +904,7 @@
           capital: chartDays.map(day => chartByDay[day].capital),
           profit: chartDays.map(day => chartByDay[day].profit),
           stockPaid: chartDays.map(day => chartByDay[day].stockPaid),
+          walletUsed: chartDays.map(day => chartByDay[day].walletUsed),
           debt: chartDays.map(day => chartByDay[day].debt),
           sales: chartDays.map(day => chartByDay[day].total),
           cash: chartDays.map(day => chartByDay[day].capital),
@@ -846,6 +913,7 @@
             capital: capitalReturned,
             profit,
             stockPaid,
+            walletUsed,
             debt: totalDebt
           }
         }
@@ -1530,6 +1598,7 @@
     getFuelLogData,
     saveFuelLog,
     saveStockIn,
+    saveCapitalWalletEntry,
     getDebtPageData,
     saveDebtTransaction,
     clearDebtByCustomer,

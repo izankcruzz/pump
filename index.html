@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-full-width-daily-sections-v79"></script>
+    <script src="./supabase-adapter.js?v=20260613-capital-wallet-v80"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -626,6 +626,9 @@
                         <button onclick="openCapitalExpenseModal()"
                             class="bg-white text-purple-700 px-3 md:px-4 h-11 rounded-2xl hover:bg-purple-50 border border-purple-100 shadow-sm text-sm font-bold transition-all shrink-0 flex items-center gap-2"
                             title="ใช้เงินทุนอื่นๆ"><i class="fa-solid fa-screwdriver-wrench"></i> <span class="hidden md:inline">อื่นๆ</span></button>
+                        <button onclick="openCapitalWalletModal()"
+                            class="bg-white text-emerald-700 px-3 md:px-4 h-11 rounded-2xl hover:bg-emerald-50 border border-emerald-100 shadow-sm text-sm font-bold transition-all shrink-0 flex items-center gap-2"
+                            title="ฝากเงินทุนล่วงหน้า"><i class="fa-solid fa-piggy-bank"></i> <span class="hidden md:inline">ฝากทุน</span></button>
                         <button onclick="openHistory('stock')"
                             class="bg-white text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 border border-slate-200 shadow-sm text-sm font-bold transition-all ml-1 shrink-0 flex items-center">
                             <i class="fa-solid fa-list mr-1.5 text-red-500"></i> <span
@@ -1310,6 +1313,14 @@
                 <div class="bg-emerald-50 p-2 rounded-xl text-center border border-emerald-100"><span
                         class="text-xs text-emerald-600">กำไรต่อหน่วยจากต้นทุนรอบนี้</span><br><span id="modal-stock-profit"
                         class="font-bold text-emerald-700 text-lg">0.00</span></div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">แหล่งจ่ายเงิน</label>
+                    <select id="modal-stock-payment-source"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 bg-white focus:ring-2 focus:ring-purple-200 focus:border-purple-400 outline-none transition">
+                        <option value="capital">เงินทุน</option>
+                        <option value="wallet">เงินฝากทุนล่วงหน้า</option>
+                    </select>
+                </div>
             </div>
             <button onclick="confirmAddStock()"
                 class="w-full mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-purple-200 active:scale-95 transition-transform">ยืนยัน</button>
@@ -1340,6 +1351,7 @@
                     <select id="capital-expense-source" onchange="updateCapitalExpenseHint()"
                         class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 bg-white focus:ring-2 focus:ring-purple-200 focus:border-purple-400 outline-none transition">
                         <option value="capital">เงินทุน</option>
+                        <option value="wallet">เงินฝากทุนล่วงหน้า</option>
                         <option value="cash">เงินสดสุทธิวันนี้</option>
                     </select>
                 </div>
@@ -1350,6 +1362,43 @@
             <button onclick="confirmAddCapitalExpense()"
                 class="w-full mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-purple-200 active:scale-95 transition-transform"><i
                     class="fa-solid fa-plus mr-2"></i>เพิ่มในรายการรอ</button>
+        </div>
+    </div>
+
+    <div id="capital-wallet-modal" class="hidden fixed inset-0 z-[92] flex items-center justify-center modal-overlay p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl scale-up-center relative">
+            <button onclick="closeCapitalWalletModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i
+                    class="fa-solid fa-times text-xl"></i></button>
+            <h3 class="text-lg font-bold text-emerald-700 mb-6 flex items-center gap-2"><i
+                    class="fa-solid fa-piggy-bank"></i> ฝากเงินทุนล่วงหน้า</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">ประเภท</label>
+                    <select id="capital-wallet-type"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 bg-white focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition">
+                        <option value="deposit">ฝากเงินทุน</option>
+                        <option value="adjust">ปรับยอดเพิ่ม</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">จำนวนเงิน (บาท)</label>
+                    <input type="number" id="capital-wallet-amount"
+                        class="w-full p-3 border border-slate-200 rounded-xl text-right font-bold text-2xl text-emerald-600 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition"
+                        placeholder="0.00">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">หมายเหตุ</label>
+                    <input type="text" id="capital-wallet-note"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 outline-none transition"
+                        placeholder="เช่น ฝากไว้จ่ายน้ำมันเชื้อเพลิง">
+                </div>
+                <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 text-xs text-emerald-700 leading-relaxed">
+                    เงินนี้จะเข้ากระเป๋าเงินฝากทุน และเมื่อนำไปจ่ายค่าสินค้า ให้เลือกแหล่งจ่ายเป็น “เงินฝากทุนล่วงหน้า”
+                </div>
+            </div>
+            <button onclick="submitCapitalWalletEntry()"
+                class="w-full mt-6 bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-transform"><i
+                    class="fa-solid fa-save mr-2"></i>บันทึก</button>
         </div>
     </div>
 
@@ -2667,6 +2716,7 @@
             const capitalTotal = data.capital || data.cash || [];
             const profitTotal = data.profit || [];
             const stockPaidTotal = data.stockPaid || [];
+            const walletUsedTotal = data.walletUsed || [];
             const debtTotal = data.debt || [];
             const ledgerTotals = data.totals || null;
             const rows = (labels || []).map((label, idx) => ({
@@ -2675,8 +2725,9 @@
                 capital: Number(capitalTotal[idx] || 0),
                 profit: Number(profitTotal[idx] || 0),
                 stockPaid: Number(stockPaidTotal[idx] || 0),
+                walletUsed: Number(walletUsedTotal[idx] || 0),
                 debt: Number(debtTotal[idx] || 0),
-                net: Number(moneyTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
+                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2689,20 +2740,22 @@
                 capital: sum.capital + row.capital,
                 profit: sum.profit + row.profit,
                 stockPaid: sum.stockPaid + row.stockPaid,
+                walletUsed: sum.walletUsed + row.walletUsed,
                 debt: sum.debt + row.debt,
                 net: sum.net + row.net
-            }), { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0, net: 0 });
+            }), { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, net: 0 });
             const totals = { ...rawTotals, ...(ledgerTotals || {}) };
-            totals.net = Number(totals.net ?? (Number(totals.total || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
+            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
             const stockPaidClass = value => value === 0 ? 'text-slate-400' : 'text-orange-600';
+            const walletClass = value => value === 0 ? 'text-slate-400' : 'text-emerald-600';
             const debtClass = value => value === 0 ? 'text-slate-400' : 'text-red-600';
             const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[1060px] border-collapse text-sm">
+                    <table class="w-full min-w-[1220px] border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
                                 <th class="px-4 py-3 text-left">วันที่</th>
@@ -2710,8 +2763,9 @@
                                 <th class="px-4 py-3 text-right">ต้นทุน</th>
                                 <th class="px-4 py-3 text-right">กำไร</th>
                                 <th class="px-4 py-3 text-right">จ่ายทุน</th>
+                                <th class="px-4 py-3 text-right">เงินฝากใช้</th>
                                 <th class="px-4 py-3 text-right">ค้างชำระ</th>
-                                <th class="px-4 py-3 text-right">สรุปยอด</th>
+                                <th class="px-4 py-3 text-right">เงินสดจริง</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -2722,6 +2776,7 @@
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capital)}">${fmt(row.capital)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${walletClass(row.walletUsed)}">${fmt(row.walletUsed)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${netClass(row.net)}">${fmt(row.net)}</td>
                                 </tr>
@@ -2734,6 +2789,7 @@
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capital)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.walletUsed)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.debt)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.net)}</td>
                             </tr>
@@ -3173,9 +3229,39 @@
             document.getElementById('modal-stock-current-price').innerText = currentPrice.toFixed(2);
             document.getElementById('modal-stock-sale-price').value = currentPrice ? currentPrice.toFixed(2) : '';
             document.getElementById('modal-stock-profit').innerText = '0.00';
+            document.getElementById('modal-stock-payment-source').value = 'capital';
             document.getElementById('stock-popup-modal').classList.remove('hidden'); setTimeout(() => document.getElementById('modal-stock-qty').focus(), 100);
         }
         function closeStockModal() { document.getElementById('stock-popup-modal').classList.add('hidden'); }
+        function openCapitalWalletModal() {
+            document.getElementById('capital-wallet-type').value = 'deposit';
+            document.getElementById('capital-wallet-amount').value = '';
+            document.getElementById('capital-wallet-note').value = '';
+            document.getElementById('capital-wallet-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('capital-wallet-amount').focus(), 100);
+        }
+        function closeCapitalWalletModal() { document.getElementById('capital-wallet-modal').classList.add('hidden'); }
+        function submitCapitalWalletEntry() {
+            const type = document.getElementById('capital-wallet-type').value;
+            const amount = parseFloat(document.getElementById('capital-wallet-amount').value);
+            const note = document.getElementById('capital-wallet-note').value;
+            if (!amount || amount <= 0) return alert("กรุณากรอกจำนวนเงิน");
+            const btn = document.querySelector('#capital-wallet-modal button.bg-gradient-to-r');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> กำลังบันทึก...';
+            btn.disabled = true;
+            google.script.run.withSuccessHandler((res) => {
+                showSuccess(res || "บันทึกแล้ว");
+                closeCapitalWalletModal();
+                loadDashboard();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).withFailureHandler(e => {
+                alert("❌ เกิดข้อผิดพลาด: " + e.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).saveCapitalWalletEntry({ type, amount, note });
+        }
         function openCapitalExpenseModal() {
             document.getElementById('capital-expense-title').value = '';
             document.getElementById('capital-expense-amount').value = '';
@@ -3192,6 +3278,9 @@
             if (source === 'cash') {
                 hint.className = 'bg-blue-50 border border-blue-100 rounded-2xl p-3 text-xs text-blue-700 leading-relaxed';
                 hint.innerText = 'รายการนี้จะหักจากเงินสดสุทธิวันนี้ และลงรายจ่ายทั่วไป ไม่หักเงินทุน';
+            } else if (source === 'wallet') {
+                hint.className = 'bg-emerald-50 border border-emerald-100 rounded-2xl p-3 text-xs text-emerald-700 leading-relaxed';
+                hint.innerText = 'รายการนี้จะใช้เงินฝากทุนล่วงหน้า เพื่อให้เงินสดจริงของวันไม่ติดลบจากยอดที่ฝากไว้ก่อน';
             } else {
                 hint.className = 'bg-purple-50 border border-purple-100 rounded-2xl p-3 text-xs text-purple-700 leading-relaxed';
                 hint.innerText = 'รายการนี้จะหักจากเงินทุน ไม่หักจากกำไร และไม่เพิ่มสต็อกสินค้า';
@@ -3205,6 +3294,7 @@
             stockList.push({
                 type: source === 'cash' ? 'cashExpense' : 'capitalExpense',
                 source: source,
+                paymentSource: source === 'wallet' ? 'wallet' : source,
                 productName: title,
                 qty: 1,
                 unit: 'รายการ',
@@ -3231,6 +3321,7 @@
             const qty = parseFloat(document.getElementById('modal-stock-qty').value);
             const total = parseFloat(document.getElementById('modal-stock-total').value);
             const salePrice = parseFloat(document.getElementById('modal-stock-sale-price').value);
+            const paymentSource = document.getElementById('modal-stock-payment-source').value;
             if (!qty || !total) return alert("กรุณากรอกจำนวนและราคารวม");
             if (!salePrice || salePrice <= 0) return alert("กรุณากรอกราคาขายให้ถูกต้อง");
             const pricePerUnit = total / qty;
@@ -3243,7 +3334,8 @@
                 pricePerUnit: pricePerUnit,
                 oldSalePrice: Number(currentStockItem.price) || 0,
                 salePrice: salePrice,
-                profitPerUnit: salePrice - pricePerUnit
+                profitPerUnit: salePrice - pricePerUnit,
+                paymentSource: paymentSource
             });
             renderStockList();
             closeStockModal();
@@ -3274,25 +3366,34 @@
             }
 
             
+            const stockPaymentLabel = item => {
+                if (item.type === 'cashExpense') return { text: 'ใช้เงินสดสุทธิวันนี้', color: 'text-blue-600', icon: 'fa-wallet' };
+                if (item.paymentSource === 'wallet') return { text: 'ใช้เงินฝากทุนล่วงหน้า', color: 'text-emerald-600', icon: 'fa-piggy-bank' };
+                if (item.type === 'capitalExpense') return { text: 'ใช้เงินทุนอื่นๆ', color: 'text-purple-600', icon: 'fa-screwdriver-wrench' };
+                return { text: 'จ่ายจากเงินทุน', color: 'text-purple-600', icon: 'fa-sack-dollar' };
+            };
             const mobileItems = document.getElementById('stock-items-mobile');
             if (count === 0) {
                 mobileItems.innerHTML = '<div class="text-center text-slate-300 py-10"><i class="fa-solid fa-boxes-packing text-4xl mb-2 opacity-30"></i><p>ยังไม่มีรายการ</p></div>';
             } else {
-                mobileItems.innerHTML = stockList.map((i, idx) => `
+                mobileItems.innerHTML = stockList.map((i, idx) => {
+                    const pay = stockPaymentLabel(i);
+                    return `
                     <div class="bg-white border border-slate-100 p-3 rounded-2xl flex justify-between items-center shadow-sm">
                         <div class="flex-1 min-w-0 pr-2">
                             <div class="font-bold text-slate-700 text-sm truncate">${escapeHtml(i.productName)}</div>
                             ${i.type === 'capitalExpense' || i.type === 'cashExpense'
-                                ? `<div class="text-xs ${i.type === 'cashExpense' ? 'text-blue-600' : 'text-purple-600'} font-bold mt-0.5"><i class="fa-solid ${i.type === 'cashExpense' ? 'fa-wallet' : 'fa-screwdriver-wrench'} mr-1"></i>${i.type === 'cashExpense' ? 'ใช้เงินสดสุทธิวันนี้' : 'ใช้เงินทุนอื่นๆ'}</div>`
+                                ? `<div class="text-xs ${pay.color} font-bold mt-0.5"><i class="fa-solid ${pay.icon} mr-1"></i>${pay.text}</div>`
                                 : `<div class="text-xs text-slate-400 mt-0.5">x${i.qty} ${i.unit} | ต้นทุน ${i.pricePerUnit.toFixed(2)} | ขาย ${Number(i.salePrice || 0).toFixed(2)}</div>
+                                   <div class="text-xs ${pay.color} font-bold mt-0.5"><i class="fa-solid ${pay.icon} mr-1"></i>${pay.text}</div>
                                    <div class="text-xs ${Number(i.profitPerUnit || 0) < 0 ? 'text-red-500' : 'text-emerald-600'} font-bold mt-0.5">กำไร/หน่วย ${Number(i.profitPerUnit || 0).toFixed(2)} บาท</div>`}
                         </div>
                         <div class="flex items-center gap-3">
                             <div class="font-bold text-purple-600 text-sm shrink-0">${i.totalPrice.toLocaleString()} บาท</div>
                             <button onclick="stockList.splice(${idx},1);renderStockList()" class="text-red-400 hover:text-red-600 bg-red-50 rounded-full w-8 h-8 flex items-center justify-center border border-red-100"><i class="fa-solid fa-trash-can text-xs"></i></button>
                         </div>
-                    </div>
-                `).join('');
+                    </div>`;
+                }).join('');
             }
         }
 
@@ -3304,9 +3405,16 @@
             } else {
                 tbody.innerHTML = stockList.map((i, idx) => {
                     const isCapitalExpense = i.type === 'capitalExpense' || i.type === 'cashExpense';
+                    const pay = (() => {
+                        if (i.type === 'cashExpense') return { text: 'ใช้เงินสดสุทธิวันนี้', color: 'text-blue-600', icon: 'fa-wallet' };
+                        if (i.paymentSource === 'wallet') return { text: 'ใช้เงินฝากทุนล่วงหน้า', color: 'text-emerald-600', icon: 'fa-piggy-bank' };
+                        if (i.type === 'capitalExpense') return { text: 'ใช้เงินทุนอื่นๆ', color: 'text-purple-600', icon: 'fa-screwdriver-wrench' };
+                        return { text: 'จ่ายจากเงินทุน', color: 'text-purple-600', icon: 'fa-sack-dollar' };
+                    })();
                     const detail = isCapitalExpense
-                        ? `<div class="text-[11px] ${i.type === 'cashExpense' ? 'text-blue-600' : 'text-purple-600'} font-bold"><i class="fa-solid ${i.type === 'cashExpense' ? 'fa-wallet' : 'fa-screwdriver-wrench'} mr-1"></i>${i.type === 'cashExpense' ? 'ใช้เงินสดสุทธิวันนี้' : 'ใช้เงินทุนอื่นๆ'}</div>`
-                        : `<div class="text-[11px] text-slate-400 font-normal">ต้นทุน ${Number(i.pricePerUnit || 0).toFixed(2)} | ขาย ${Number(i.salePrice || 0).toFixed(2)} | <span class="${Number(i.profitPerUnit || 0) < 0 ? 'text-red-500' : 'text-emerald-600'} font-bold">กำไร ${Number(i.profitPerUnit || 0).toFixed(2)}</span></div>`;
+                        ? `<div class="text-[11px] ${pay.color} font-bold"><i class="fa-solid ${pay.icon} mr-1"></i>${pay.text}</div>`
+                        : `<div class="text-[11px] text-slate-400 font-normal">ต้นทุน ${Number(i.pricePerUnit || 0).toFixed(2)} | ขาย ${Number(i.salePrice || 0).toFixed(2)} | <span class="${Number(i.profitPerUnit || 0) < 0 ? 'text-red-500' : 'text-emerald-600'} font-bold">กำไร ${Number(i.profitPerUnit || 0).toFixed(2)}</span></div>
+                           <div class="text-[11px] ${pay.color} font-bold"><i class="fa-solid ${pay.icon} mr-1"></i>${pay.text}</div>`;
                     return `<tr class="border-b border-slate-50 hover:bg-slate-50"><td class="px-3 py-2 text-slate-700 font-medium"><div>${escapeHtml(i.productName)}</div>${detail}</td><td class="text-center">${isCapitalExpense ? '-' : i.qty}</td><td class="text-right">${i.totalPrice.toLocaleString()}</td><td class="text-center"><button onclick="stockList.splice(${idx},1);renderStockList()" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>`;
                 }).join('');
             }
