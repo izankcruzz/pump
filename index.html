@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-capital-movement-v82"></script>
+    <script src="./supabase-adapter.js?v=20260613-capital-table-v83"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -264,8 +264,8 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-[1.45fr_1fr] gap-3 mb-4">
-                    <section class="bg-white rounded-lg border border-violet-100 p-4 shadow-sm">
+                <div class="grid grid-cols-1 xl:grid-cols-[1.45fr_1fr] gap-3 mb-4" id="dashboard-summary-grid">
+                    <section class="bg-white rounded-lg border border-violet-100 p-4 shadow-sm" id="dash-cash-summary-card">
                         <div class="flex items-center justify-between gap-2 mb-3">
                             <div class="text-sm font-black text-slate-700">แยกเงินสดวันนี้</div>
                             <i class="fa-solid fa-chart-line text-violet-500"></i>
@@ -1916,28 +1916,25 @@
             const dailyListCard = document.getElementById('daily-list-card');
             const chartCard = document.getElementById('dash-chart-card');
             const detailGrid = document.getElementById('dashboard-detail-grid');
+            const summaryGrid = document.getElementById('dashboard-summary-grid');
+            const cashSummaryCard = document.getElementById('dash-cash-summary-card');
             const isRange = currentDashMode === 'range';
             if (monthControls) {
                 monthControls.classList.toggle('hidden', !isMonth);
                 monthControls.classList.toggle('flex', isMonth);
             }
             if (monthlyPanel) monthlyPanel.classList.toggle('hidden', !isMonth);
+            if (cashSummaryCard) cashSummaryCard.classList.add('hidden');
             if (dailyListCard) {
                 dailyListCard.className = isMonth
                     ? "hidden"
                     : "bg-white rounded-lg border border-slate-100 shadow-sm flex flex-col h-[520px] overflow-hidden w-full";
             }
             if (chartCard) {
-                if (isMonth && monthlyPanel && chartCard.parentElement !== monthlyPanel.parentElement) {
-                    monthlyPanel.parentElement.insertBefore(chartCard, monthlyPanel);
-                } else if (!isMonth && detailGrid && chartCard.parentElement !== detailGrid) {
-                    detailGrid.appendChild(chartCard);
+                if (summaryGrid && chartCard.parentElement !== summaryGrid) {
+                    summaryGrid.insertBefore(chartCard, summaryGrid.firstElementChild);
                 }
-                chartCard.className = isMonth
-                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 flex flex-col mb-4 w-full"
-                    : isRange
-                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 flex flex-col w-full"
-                    : "hidden";
+                chartCard.className = "bg-white rounded-lg border border-slate-100 shadow-sm p-4 flex flex-col w-full min-w-0";
             }
 
             const chartTitle = document.getElementById('chart-title');
