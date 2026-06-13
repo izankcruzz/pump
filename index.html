@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-capital-table-v84"></script>
+    <script src="./supabase-adapter.js?v=20260613-capital-table-v85"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2799,43 +2799,53 @@
             const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[1080px] border-collapse text-sm">
+                    <table class="w-full min-w-[980px] border-collapse text-sm table-fixed">
+                        <colgroup>
+                            <col class="w-[110px]">
+                            <col class="w-[130px]">
+                            <col class="w-[120px]">
+                            <col class="w-[115px]">
+                            <col class="w-[120px]">
+                            <col class="w-[125px]">
+                            <col class="w-[115px]">
+                            <col class="w-[145px]">
+                        </colgroup>
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
-                                <th class="px-4 py-3 text-left">วันที่</th>
-                                <th class="px-4 py-3 text-right">ยอดขาย</th>
-                                <th class="px-4 py-3 text-right">ต้นทุน</th>
-                                <th class="px-4 py-3 text-right">กำไร</th>
-                                <th class="px-4 py-3 text-right">จ่ายทุน</th>
-                                <th class="px-4 py-3 text-right">เงินฝากใช้</th>
-                                <th class="px-4 py-3 text-right">ค้างชำระ</th>
-                                <th class="px-4 py-3 text-right">เงินสดจริง</th>
+                                <th class="px-3 py-3 text-left">วันที่</th>
+                                <th class="px-3 py-3 text-right">ยอดขาย</th>
+                                <th class="px-3 py-3 text-right">ต้นทุน</th>
+                                <th class="px-3 py-3 text-right">กำไร</th>
+                                <th class="px-3 py-3 text-right">จ่ายทุน</th>
+                                <th class="px-3 py-3 text-right">เงินฝากใช้</th>
+                                <th class="px-3 py-3 text-right">ค้างชำระ</th>
+                                <th class="px-3 py-3 text-right">เงินสดจริง</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             ${visibleRows.map((row, idx) => `
                                 <tr class="${idx % 2 ? 'bg-slate-50/70' : 'bg-white'} hover:bg-indigo-50/40 transition-colors">
-                                    <td class="px-4 py-3 font-black text-slate-700 whitespace-nowrap">${escapeHtml(row.label)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${moneyClass(row.total)}">${fmt(row.total)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capitalNet)}">${fmt(row.capitalNet)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${walletClass(row.walletUsed)}">${fmt(row.walletUsed)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${netClass(row.net)}">${fmt(row.net)}</td>
+                                    <td class="px-3 py-3 font-black text-slate-700 whitespace-nowrap">${escapeHtml(row.label)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${moneyClass(row.total)}">${fmt(row.total)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capitalNet)}">${fmt(row.capitalNet)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${walletClass(row.walletUsed)}">${fmt(row.walletUsed)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${netClass(row.net)}">${fmt(row.net)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                         <tfoot>
                             <tr class="bg-slate-900 text-white">
-                                <td class="px-4 py-4 font-black rounded-bl-xl">รวม</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.total)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capitalNet)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.walletUsed)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.debt)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.net)}</td>
+                                <td class="px-3 py-4 font-black rounded-bl-xl">รวม</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.total)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capitalNet)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.walletUsed)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.debt)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.net)}</td>
                             </tr>
                         </tfoot>
                     </table>
