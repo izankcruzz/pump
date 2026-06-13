@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-ledger-adjustment-row-v68"></script>
+    <script src="./supabase-adapter.js?v=20260613-sales-cost-at-sale-v70"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2289,9 +2289,8 @@
             const lists = (data && data.lists) || {};
             const salesList = Array.isArray(lists.sales) ? lists.sales : [];
             const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-            const salesCapitalFromItems = salesList.reduce((sum, item) => sum + (Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0))), 0);
-            const salesCapital = Number.isFinite(Number(data && data.summary && data.summary.capitalReturned)) ? Number(data.summary.capitalReturned) : salesCapitalFromItems;
             const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
+            const salesCapital = salesTotal - salesProfit;
             setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
             setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
             setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
@@ -2542,9 +2541,8 @@
 
                 const salesList = data.lists.sales;
                 const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-                const salesCapitalFromItems = salesList.reduce((sum, item) => sum + (Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0))), 0);
-                const salesCapital = Number.isFinite(Number(data.summary.capitalReturned)) ? Number(data.summary.capitalReturned) : salesCapitalFromItems;
                 const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
+                const salesCapital = salesTotal - salesProfit;
                 setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
                 setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
                 setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);

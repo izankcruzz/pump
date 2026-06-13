@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-ledger-adjustment-row-v68";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-sales-cost-at-sale-v70";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -641,9 +641,11 @@
 
     const salesList = sales.map(row => {
       const product = productByName[row.product_name] || {};
-      const cost = Number(product.avg_cost || 0);
       const qty = Number(row.qty || 0);
       const total = Number(row.total || row.unit_price * qty || 0);
+      const unitCostAtSale = Number(row.unit_cost_at_sale || 0);
+      const cost = unitCostAtSale > 0 ? unitCostAtSale : Number(product.avg_cost || 0);
+      const costTotal = Number(row.cost_total || 0) || (cost * qty);
       return {
         name: row.product_name,
         day: bkkDate(row.sold_at),
@@ -652,8 +654,8 @@
         category: product.category || "",
         isFuel: isFuelProduct(product) || FUEL_NAMES.includes(row.product_name),
         total,
-        costTotal: cost * qty,
-        profit: total - (cost * qty),
+        costTotal,
+        profit: total - costTotal,
         profitPerUnit: Number(row.unit_price || 0) - cost
       };
     });
@@ -1156,7 +1158,8 @@
       const product = productByName[row.product_name] || {};
       const qty = Number(row.qty || 0);
       const total = Number(row.total || row.unit_price * qty || 0);
-      const costTotal = Number(product.avg_cost || 0) * qty;
+      const unitCostAtSale = Number(row.unit_cost_at_sale || 0);
+      const costTotal = Number(row.cost_total || 0) || (unitCostAtSale > 0 ? unitCostAtSale : Number(product.avg_cost || 0)) * qty;
       if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.capitalReturned += costTotal;
       if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) result.profit += total - costTotal;
     });
