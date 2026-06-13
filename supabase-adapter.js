@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-full-daily-sales-summary-v73";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-month-to-today-summary-v74";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -570,8 +570,10 @@
       const base = customDate && !monthMatch ? new Date(customDate) : new Date();
       const y = monthMatch ? Number(monthMatch[1]) : base.getFullYear();
       const m = monthMatch ? Number(monthMatch[2]) : base.getMonth() + 1;
+      const today = bkkDate();
+      const monthEnd = ymd(y, m, new Date(y, m, 0).getDate());
       from = ymd(y, m, 1);
-      to = ymd(y, m, new Date(y, m, 0).getDate());
+      to = from <= today && today <= monthEnd ? today : monthEnd;
     } else if (period === "range" && dateRange) {
       from = dateRange.from;
       to = dateRange.to;
