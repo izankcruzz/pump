@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-month-to-today-summary-v74"></script>
+    <script src="./supabase-adapter.js?v=20260613-daily-summary-table-v75"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2685,28 +2685,39 @@
                 profit: sum.profit + row.profit
             }), { total: 0, capital: 0, profit: 0 });
             const totals = ledgerTotals || rawTotals;
+            const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
+            const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
+            const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
             container.innerHTML = `
-                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-xs font-black text-slate-500 border-b border-slate-200">
-                    <div>วันที่</div>
-                    <div class="text-right">ยอดขาย</div>
-                    <div class="text-right">ต้นทุน</div>
-                    <div class="text-right">กำไร</div>
-                </div>
-                <div class="space-y-2">
-                    ${visibleRows.map(row => `
-                        <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-white border border-slate-100 rounded-xl px-3 py-2 shadow-sm">
-                            <div class="font-bold text-slate-700">${escapeHtml(row.label)}</div>
-                            <div class="text-right font-black text-indigo-600">${fmt(row.total)}</div>
-                            <div class="text-right font-black text-sky-600">${fmt(row.capital)}</div>
-                            <div class="text-right font-black ${row.profit < 0 ? 'text-red-600' : 'text-purple-600'}">${fmt(row.profit)}</div>
-                        </div>
-                    `).join('')}
-                </div>
-                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-slate-900 text-white rounded-xl px-3 py-3 mt-3">
-                    <div class="font-black">รวม</div>
-                    <div class="text-right font-black">${fmt(totals.total)}</div>
-                    <div class="text-right font-black">${fmt(totals.capital)}</div>
-                    <div class="text-right font-black">${fmt(totals.profit)}</div>
+                <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <table class="w-full min-w-[680px] border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100 text-xs font-black text-slate-500">
+                                <th class="px-4 py-3 text-left">วันที่</th>
+                                <th class="px-4 py-3 text-right">ยอดขาย</th>
+                                <th class="px-4 py-3 text-right">ต้นทุน</th>
+                                <th class="px-4 py-3 text-right">กำไร</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${visibleRows.map((row, idx) => `
+                                <tr class="${idx % 2 ? 'bg-slate-50/70' : 'bg-white'} hover:bg-indigo-50/40 transition-colors">
+                                    <td class="px-4 py-3 font-black text-slate-700 whitespace-nowrap">${escapeHtml(row.label)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${moneyClass(row.total)}">${fmt(row.total)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capital)}">${fmt(row.capital)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr class="bg-slate-900 text-white">
+                                <td class="px-4 py-4 font-black rounded-bl-xl">รวม</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.total)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capital)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.profit)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>`;
         }
 
