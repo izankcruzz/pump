@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-daily-summary-table-v75"></script>
+    <script src="./supabase-adapter.js?v=20260613-fuel-log-delete-revert-v76"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -3852,9 +3852,11 @@
                 showSuccess(message || "แก้ไขข้อมูลเรียบร้อย");
                 closeEditModal();
                 if (currentEditType === 'fueltest') {
+                    loadFuelTestMeter();
                     openFuelTestHistory();
                 } else {
                     if (['sale', 'stock', 'fuel'].includes(currentEditType)) loadDataFromSheet();
+                    if (currentEditType === 'sale') loadFuelLogData();
                     if (['sale', 'stock', 'fuel', 'expense', 'debt'].includes(currentEditType)) loadDashboard();
                     openHistory(currentEditType);
                 }
@@ -3878,9 +3880,11 @@
                 showSuccess(message || "ลบรายการแล้ว");
                 closeEditModal();
                 if (currentEditType === 'fueltest') {
+                    loadFuelTestMeter();
                     openFuelTestHistory();
                 } else {
                     if (['sale', 'stock', 'fuel'].includes(currentEditType)) loadDataFromSheet();
+                    if (currentEditType === 'sale') loadFuelLogData();
                     if (['sale', 'stock', 'fuel', 'expense', 'debt'].includes(currentEditType)) loadDashboard();
                     openHistory(currentEditType);
                 }

@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-summary-table-v75";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-fuel-log-delete-revert-v76";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -1201,6 +1201,72 @@
     }));
   }
 
+  async function findFuelLogForSale(db, sale) {
+    if (!sale) return null;
+    if (sale.fuel_log_id) {
+      const linked = await db.from("fuel_logs").select("*").eq("id", sale.fuel_log_id).maybeSingle();
+      if (linked.error) throw linked.error;
+      if (linked.data) return linked.data;
+    }
+
+    const soldAt = sale.sold_at || sale.created_at || new Date().toISOString();
+    const day = bkkDate(soldAt);
+    const start = `${day}T00:00:00+07:00`;
+    const end = `${day}T23:59:59+07:00`;
+
+    async function readLogs(matchById) {
+      let query = db
+        .from("fuel_logs")
+        .select("*")
+        .gte("logged_at", start)
+        .lte("logged_at", end)
+        .order("logged_at", { ascending: false })
+        .limit(100);
+      if (matchById && sale.product_id) query = query.eq("product_id", sale.product_id);
+      else query = query.eq("product_name", sale.product_name);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    }
+
+    let logs = sale.product_id ? await readLogs(true) : [];
+    if (!logs.length && sale.product_name) logs = await readLogs(false);
+    logs = logs.filter(row => String(row.note || "").toLowerCase() !== "fuel test");
+    if (!logs.length) return null;
+
+    const saleTime = new Date(soldAt).getTime();
+    const salePrice = Number(sale.unit_price || 0);
+    const saleQty = Number(sale.qty || 0);
+    const scored = logs.map(row => {
+      const timeDiff = Math.abs(new Date(row.logged_at || row.created_at || soldAt).getTime() - saleTime);
+      const priceDiff = Math.abs(Number(row.unit_price || 0) - salePrice);
+      const qtyDiff = Math.abs(Number(row.qty || 0) - saleQty);
+      return { row, timeDiff, score: timeDiff + (priceDiff * 60000) + (qtyDiff * 1000) };
+    }).sort((a, b) => a.score - b.score);
+
+    return scored[0] && scored[0].timeDiff <= 10 * 60 * 1000 ? scored[0].row : null;
+  }
+
+  async function findFuelLogForTest(db, test) {
+    if (!test) return null;
+    const day = bkkDate(test.tested_at || test.created_at || new Date().toISOString());
+    let query = db
+      .from("fuel_logs")
+      .select("*")
+      .gte("logged_at", `${day}T00:00:00+07:00`)
+      .lte("logged_at", `${day}T23:59:59+07:00`)
+      .eq("meter_start", Number(test.meter_start || 0))
+      .eq("meter_end", Number(test.meter_end || 0))
+      .order("logged_at", { ascending: false })
+      .limit(20);
+    if (test.product_id) query = query.eq("product_id", test.product_id);
+    else query = query.eq("product_name", test.product_name);
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = data || [];
+    return rows.find(row => String(row.note || "").toLowerCase() === "fuel test") || rows[0] || null;
+  }
+
   async function getRecentHistory(type) {
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : "sales";
@@ -1214,7 +1280,27 @@
       .order(dateCol, { ascending: false })
       .limit(100);
     if (error) throw error;
-    return (data || []).map(row => {
+    const rows = data || [];
+    if (table === "sales") {
+      const products = await productRows();
+      const fuelKeys = new Set(products.filter(isFuelProduct).flatMap(row => [row.id, row.name]).filter(Boolean));
+      return Promise.all(rows.map(async row => {
+        const isFuelSale = fuelKeys.has(row.product_id) || fuelKeys.has(row.product_name) || FUEL_NAMES.includes(row.product_name);
+        const log = isFuelSale ? await findFuelLogForSale(db, row) : null;
+        return {
+          rowIndex: row.id,
+          data: [thaiDate(row.sold_at), row.product_name, row.unit_price, row.qty, row.unit, row.total, row.note || ""],
+          extra: log ? {
+            fuelLogId: log.id,
+            start: Number(log.meter_start || 0),
+            end: Number(log.meter_end || 0),
+            qty: Number(log.qty || 0),
+            stockAfter: Number(log.stock_after || 0)
+          } : null
+        };
+      }));
+    }
+    return rows.map(row => {
       if (table === "expenses") return { rowIndex: row.id, data: [thaiDate(row.spent_at), row.title, row.amount, row.amount, row.note || ""] };
       if (table === "purchases") return { rowIndex: row.id, data: [thaiDate(row.purchased_at), row.product_name, row.unit_cost, row.qty, row.unit, row.total, row.avg_cost_after] };
       if (table === "debts") return { rowIndex: row.id, data: [thaiDate(row.debt_at), row.customer_name, row.product_name, row.qty, row.amount, row.filler_name || ""] };
@@ -1256,6 +1342,8 @@
       const nextQty = form.isFuel ? meterQty(form.start_meter, form.end_meter) : positiveNumber(form.qty);
       const nextPrice = positiveNumber(form.price || sale.unit_price);
       if (nextQty <= 0) throw new Error("จำนวนต้องมากกว่า 0");
+      const fuelLog = form.isFuel ? await findFuelLogForSale(db, sale) : null;
+      const oldMeterQty = fuelLog ? Number(fuelLog.qty || 0) : oldQty;
       const { error } = await db
         .from("sales")
         .update({
@@ -1266,7 +1354,19 @@
         })
         .eq("id", rowIndex);
       if (error) throw error;
-      if (sale.payment_status !== "void") await adjustStock(sale.product_id, oldQty - nextQty);
+      if (fuelLog) {
+        const { error: logError } = await db
+          .from("fuel_logs")
+          .update({
+            meter_start: positiveNumber(form.start_meter),
+            meter_end: positiveNumber(form.end_meter),
+            qty: nextQty,
+            unit_price: nextPrice
+          })
+          .eq("id", fuelLog.id);
+        if (logError) throw logError;
+      }
+      if (sale.payment_status !== "void") await adjustStock(sale.product_id, oldMeterQty - nextQty);
       return "แก้ไขรายการขายแล้ว";
     }
 
@@ -1313,13 +1413,24 @@
     }
 
     if (table === "fuel_tests") {
+      const { data: test, error: testError } = await db.from("fuel_tests").select("*").eq("id", rowIndex).maybeSingle();
+      if (testError) throw testError;
       const startMeter = positiveNumber(form.start_meter);
       const endMeter = positiveNumber(form.end_meter);
+      const qty = meterQty(startMeter, endMeter);
+      const fuelLog = test ? await findFuelLogForTest(db, test) : null;
       const { error } = await db
         .from("fuel_tests")
-        .update({ meter_start: startMeter, meter_end: endMeter, qty: meterQty(startMeter, endMeter) })
+        .update({ meter_start: startMeter, meter_end: endMeter, qty })
         .eq("id", rowIndex);
       if (error) throw error;
+      if (fuelLog) {
+        const { error: logError } = await db
+          .from("fuel_logs")
+          .update({ meter_start: startMeter, meter_end: endMeter, qty })
+          .eq("id", fuelLog.id);
+        if (logError) throw logError;
+      }
       return "แก้ไขทดสอบน้ำมันแล้ว";
     }
     return "ยังไม่รองรับแก้ไขในโหมด Supabase";
@@ -1332,16 +1443,22 @@
     if (table === "sales") {
       const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
       if (saleError) throw saleError;
+      const fuelLog = sale ? await findFuelLogForSale(db, sale) : null;
+      const stockQtyToRestore = fuelLog ? Number(fuelLog.qty || 0) : Number(sale && sale.qty || 0);
       if (sale && sale.product_id) {
         const { data: product, error: productError } = await db.from("products").select("stock_qty").eq("id", sale.product_id).maybeSingle();
         if (productError) throw productError;
         if (product) {
           const { error: stockError } = await db
             .from("products")
-            .update({ stock_qty: Number(product.stock_qty || 0) + Number(sale.qty || 0) })
+            .update({ stock_qty: Number(product.stock_qty || 0) + stockQtyToRestore })
             .eq("id", sale.product_id);
           if (stockError) throw stockError;
         }
+      }
+      if (fuelLog) {
+        const { error: logDeleteError } = await db.from("fuel_logs").delete().eq("id", fuelLog.id);
+        if (logDeleteError) throw logDeleteError;
       }
     }
 
@@ -1358,6 +1475,16 @@
             .eq("id", purchase.product_id);
           if (stockError) throw stockError;
         }
+      }
+    }
+
+    if (table === "fuel_tests") {
+      const { data: test, error: testError } = await db.from("fuel_tests").select("*").eq("id", rowIndex).maybeSingle();
+      if (testError) throw testError;
+      const fuelLog = test ? await findFuelLogForTest(db, test) : null;
+      if (fuelLog) {
+        const { error: logDeleteError } = await db.from("fuel_logs").delete().eq("id", fuelLog.id);
+        if (logDeleteError) throw logDeleteError;
       }
     }
 
