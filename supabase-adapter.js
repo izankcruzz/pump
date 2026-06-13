@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-12-sales-total-label-v61-month-live-sales";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-purchase-capital-live-v62";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -708,7 +708,8 @@
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
     const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
-    const liveStockPaid = expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
+    const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
+    const liveStockPaid = livePurchasePaid + expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
     const balanceDate = bkkDate();
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
@@ -717,9 +718,10 @@
     const capitalReturned = periodLedger.periodCapitalIncome !== null
       ? periodLedger.periodCapitalIncome + periodDeltas.capitalReturned
       : liveCapitalReturned;
-    const stockPaid = periodLedger.periodCapitalExpense !== null
+    const ledgerStockPaid = periodLedger.periodCapitalExpense !== null
       ? periodLedger.periodCapitalExpense + periodDeltas.stockPaid
-      : liveStockPaid;
+      : null;
+    const stockPaid = ledgerStockPaid !== null ? Math.max(ledgerStockPaid, liveStockPaid) : liveStockPaid;
     const generalExpenses = periodLedger.periodProfitExpense !== null
       ? periodLedger.periodProfitExpense + periodDeltas.generalExpenses
       : liveGeneralExpenses;
@@ -772,6 +774,7 @@
     const engineOilSales = sumRowsByName(salesList.filter(row => !row.isFuel));
     const bestSellerItems = sortByQtySold(sumRowsByName(salesList));
     const monthlyPayments = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type !== "stock")];
+    const capitalItems = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type === "stock")];
 
     return {
       summary: {
@@ -804,7 +807,7 @@
       lists: {
         sales: salesList,
         expenses: expenseList,
-        capital: expenseList.filter(row => row.type === "stock"),
+        capital: capitalItems,
         debts: periodDebtList,
         repayments: repayList,
         fuelTests
@@ -1084,12 +1087,14 @@
 
     const start = `${fromDate}T00:00:00+07:00`;
     const end = `${toDate}T23:59:59+07:00`;
-    const [salesRes, expensesRes] = await Promise.all([
+    const [salesRes, expensesRes, purchasesRes] = await Promise.all([
       db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
-      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end)
+      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
+      db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end)
     ]);
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
+    if (purchasesRes.error) throw purchasesRes.error;
 
     const shouldApplyDelta = (day, ledgerDate, cutoff, createdAt) => {
       if (!ledgerDate) return true;
@@ -1117,6 +1122,12 @@
       } else if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) {
         result.generalExpenses += amount;
       }
+    });
+
+    (purchasesRes.data || []).forEach(row => {
+      const day = bkkDate(row.purchased_at);
+      const amount = Number(row.total || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0);
+      if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.stockPaid += amount;
     });
 
     return result;
