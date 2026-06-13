@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-money-text-ledger-aligned-v67";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-ledger-adjustment-row-v68";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -806,16 +806,14 @@
       if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
       chartByDay[day].total += Number(row.amount || 0);
     });
-    const alignSeriesTotal = (field, target) => {
+    const ledgerAdjustment = { total: 0, capital: 0, profit: 0 };
+    const calculateSeriesAdjustment = (field, target) => {
       const current = chartDays.reduce((sum, day) => sum + Number((chartByDay[day] || {})[field] || 0), 0);
-      const diff = Number(target || 0) - current;
-      if (Math.abs(diff) < 0.01 || !chartDays.length) return;
-      const lastActiveDay = chartDays.slice().reverse().find(day => Math.abs(Number((chartByDay[day] || {})[field] || 0)) > 0.01) || chartDays[chartDays.length - 1];
-      chartByDay[lastActiveDay][field] += diff;
+      return Number(target || 0) - current;
     };
-    alignSeriesTotal("total", netCash);
-    alignSeriesTotal("capital", capitalReturned);
-    alignSeriesTotal("profit", headerNetProfit);
+    ledgerAdjustment.total = calculateSeriesAdjustment("total", netCash);
+    ledgerAdjustment.capital = calculateSeriesAdjustment("capital", capitalReturned);
+    ledgerAdjustment.profit = calculateSeriesAdjustment("profit", headerNetProfit);
 
     return {
       summary: {
@@ -860,7 +858,13 @@
           capital: chartDays.map(day => chartByDay[day].capital),
           profit: chartDays.map(day => chartByDay[day].profit),
           sales: chartDays.map(day => chartByDay[day].total),
-          cash: chartDays.map(day => chartByDay[day].capital)
+          cash: chartDays.map(day => chartByDay[day].capital),
+          adjustment: ledgerAdjustment,
+          totals: {
+            total: netCash,
+            capital: capitalReturned,
+            profit: headerNetProfit
+          }
         }
       },
       monthlyOilSummary: {
