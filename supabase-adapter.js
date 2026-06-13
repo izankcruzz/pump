@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-table-capital-debt-v77";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-table-net-summary-v78";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";

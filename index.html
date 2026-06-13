@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-daily-table-capital-debt-v77"></script>
+    <script src="./supabase-adapter.js?v=20260613-daily-table-net-summary-v78"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2675,7 +2675,8 @@
                 capital: Number(capitalTotal[idx] || 0),
                 profit: Number(profitTotal[idx] || 0),
                 stockPaid: Number(stockPaidTotal[idx] || 0),
-                debt: Number(debtTotal[idx] || 0)
+                debt: Number(debtTotal[idx] || 0),
+                net: Number(moneyTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2688,17 +2689,20 @@
                 capital: sum.capital + row.capital,
                 profit: sum.profit + row.profit,
                 stockPaid: sum.stockPaid + row.stockPaid,
-                debt: sum.debt + row.debt
-            }), { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 });
-            const totals = ledgerTotals || rawTotals;
+                debt: sum.debt + row.debt,
+                net: sum.net + row.net
+            }), { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0, net: 0 });
+            const totals = { ...rawTotals, ...(ledgerTotals || {}) };
+            totals.net = Number(totals.net ?? (Number(totals.total || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
             const stockPaidClass = value => value === 0 ? 'text-slate-400' : 'text-orange-600';
             const debtClass = value => value === 0 ? 'text-slate-400' : 'text-red-600';
+            const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[920px] border-collapse text-sm">
+                    <table class="w-full min-w-[1060px] border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
                                 <th class="px-4 py-3 text-left">วันที่</th>
@@ -2707,6 +2711,7 @@
                                 <th class="px-4 py-3 text-right">กำไร</th>
                                 <th class="px-4 py-3 text-right">จ่ายทุน</th>
                                 <th class="px-4 py-3 text-right">ค้างชำระ</th>
+                                <th class="px-4 py-3 text-right">สรุปยอด</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -2718,6 +2723,7 @@
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${netClass(row.net)}">${fmt(row.net)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2728,7 +2734,8 @@
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capital)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.debt)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.debt)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.net)}</td>
                             </tr>
                         </tfoot>
                     </table>
