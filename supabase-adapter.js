@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-month-money-summary-top-v71";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-sales-cost-summary-v72";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -581,8 +581,6 @@
     }
 
     const requestedTo = to;
-    const periodLedger = await getArchiveBalances(to, period, from);
-
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
     let salesQuery = db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void");
@@ -718,23 +716,11 @@
     const balanceDate = requestedTo;
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
-    const periodDeltas = await getBalanceDeltas(db, productByName, periodLedger, to);
-    const capitalReturned = periodLedger.periodCapitalIncome !== null
-      ? periodLedger.periodCapitalIncome + periodDeltas.capitalReturned
-      : liveCapitalReturned;
-    const ledgerStockPaid = periodLedger.periodCapitalExpense !== null
-      ? periodLedger.periodCapitalExpense + periodDeltas.stockPaid
-      : null;
-    const stockPaid = ledgerStockPaid !== null ? Math.max(ledgerStockPaid, liveStockPaid) : liveStockPaid;
-    const generalExpenses = periodLedger.periodProfitExpense !== null
-      ? periodLedger.periodProfitExpense + periodDeltas.generalExpenses
-      : liveGeneralExpenses;
-    const profit = periodLedger.periodProfitIncome !== null
-      ? periodLedger.periodProfitIncome + periodDeltas.profit
-      : liveProfit;
-    const headerNetProfit = periodLedger.periodProfitNet !== null
-      ? periodLedger.periodProfitNet + periodDeltas.profit - periodDeltas.generalExpenses
-      : liveProfit - liveGeneralExpenses;
+    const capitalReturned = liveCapitalReturned;
+    const stockPaid = liveStockPaid;
+    const generalExpenses = liveGeneralExpenses;
+    const profit = liveProfit;
+    const headerNetProfit = liveProfit - liveGeneralExpenses;
     const capitalBalance = ledgerBalances.capital !== null
       ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
       : liveCapitalReturned - liveStockPaid;
@@ -792,31 +778,6 @@
       chartByDay[day].capital += Number(row.costTotal || 0);
       chartByDay[day].profit += Number(row.profit || 0);
     });
-    periodDebtList.forEach(row => {
-      const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
-      chartByDay[day].total -= Number(row.amount || 0);
-    });
-    expenseList.filter(row => row.type !== "stock").forEach(row => {
-      const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
-      chartByDay[day].total -= Number(row.amount || 0);
-      chartByDay[day].profit -= Number(row.amount || 0);
-    });
-    repayList.forEach(row => {
-      const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
-      chartByDay[day].total += Number(row.amount || 0);
-    });
-    const ledgerAdjustment = { total: 0, capital: 0, profit: 0 };
-    const calculateSeriesAdjustment = (field, target) => {
-      const current = chartDays.reduce((sum, day) => sum + Number((chartByDay[day] || {})[field] || 0), 0);
-      return Number(target || 0) - current;
-    };
-    ledgerAdjustment.total = calculateSeriesAdjustment("total", netCash);
-    ledgerAdjustment.capital = calculateSeriesAdjustment("capital", capitalReturned);
-    ledgerAdjustment.profit = calculateSeriesAdjustment("profit", headerNetProfit);
-
     return {
       summary: {
         sales: totalSales,
@@ -861,11 +822,10 @@
           profit: chartDays.map(day => chartByDay[day].profit),
           sales: chartDays.map(day => chartByDay[day].total),
           cash: chartDays.map(day => chartByDay[day].capital),
-          adjustment: ledgerAdjustment,
           totals: {
-            total: netCash,
+            total: totalSales,
             capital: capitalReturned,
-            profit: headerNetProfit
+            profit
           }
         }
       },

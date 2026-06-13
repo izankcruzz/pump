@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-month-money-summary-top-v71"></script>
+    <script src="./supabase-adapter.js?v=20260613-sales-cost-summary-v72"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -552,7 +552,7 @@
                     <div
                         class="bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col" id="dash-chart-card">
                         <h3 class="text-base font-bold text-slate-700 mb-3 flex items-center gap-2"><i
-                                class="fa-solid fa-list-check text-indigo-500"></i> <span id="chart-title">สรุปยอดเงินรายวัน</span></h3>
+                                class="fa-solid fa-list-check text-indigo-500"></i> <span id="chart-title">สรุปยอดขายรายวัน</span></h3>
                         <div id="money-daily-summary"
                             class="flex-1 overflow-y-auto bg-slate-50 rounded-lg p-3 border border-slate-100 space-y-2">
                             <div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">กำลังโหลด...</div>
@@ -1850,7 +1850,7 @@
             }
 
             const chartTitle = document.getElementById('chart-title');
-            if (chartTitle) chartTitle.innerText = "สรุปยอดเงินรายวัน";
+            if (chartTitle) chartTitle.innerText = "สรุปยอดขายรายวัน";
         }
 
         function renderDashMoneyDetails(summary, monthlySummary) {
@@ -2440,7 +2440,7 @@
                 if (dailyListTitle) dailyListTitle.innerText = `รายการวันที่ ${dateDisplay}`;
                 renderDashboardDailyLists(data);
 
-                document.getElementById('chart-title').innerText = "สรุปยอดเงินรายวัน";
+                document.getElementById('chart-title').innerText = "สรุปยอดขายรายวัน";
 
                 // Render chart for date range
                 if (data.chart && data.chart.labels && data.chart.data) {
@@ -2666,7 +2666,6 @@
             const moneyTotal = data.total || data.sales || [];
             const capitalTotal = data.capital || data.cash || [];
             const profitTotal = data.profit || [];
-            const adjustment = data.adjustment || null;
             const ledgerTotals = data.totals || null;
             const rows = (labels || []).map((label, idx) => ({
                 label,
@@ -2676,11 +2675,6 @@
             }));
             const activeRows = rows.filter(row => row.total || row.capital || row.profit);
             const visibleRows = activeRows.length ? activeRows : rows;
-            const hasAdjustment = adjustment && (
-                Math.abs(Number(adjustment.total || 0)) >= 0.5 ||
-                Math.abs(Number(adjustment.capital || 0)) >= 0.5 ||
-                Math.abs(Number(adjustment.profit || 0)) >= 0.5
-            );
             if (!visibleRows.length) {
                 container.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีข้อมูล</div>';
                 return;
@@ -2691,17 +2685,13 @@
                 capital: sum.capital + row.capital,
                 profit: sum.profit + row.profit
             }), { total: 0, capital: 0, profit: 0 });
-            const totals = ledgerTotals || (hasAdjustment ? {
-                total: rawTotals.total + Number(adjustment.total || 0),
-                capital: rawTotals.capital + Number(adjustment.capital || 0),
-                profit: rawTotals.profit + Number(adjustment.profit || 0)
-            } : rawTotals);
+            const totals = ledgerTotals || rawTotals;
             container.innerHTML = `
                 <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-xs font-black text-slate-500 border-b border-slate-200">
                     <div>วันที่</div>
-                    <div class="text-right">เงินรวม</div>
-                    <div class="text-right">เงินทุน</div>
-                    <div class="text-right">เงินกำไร</div>
+                    <div class="text-right">ยอดขาย</div>
+                    <div class="text-right">ต้นทุน</div>
+                    <div class="text-right">กำไร</div>
                 </div>
                 <div class="space-y-2">
                     ${visibleRows.map(row => `
@@ -2713,14 +2703,6 @@
                         </div>
                     `).join('')}
                 </div>
-                ${hasAdjustment ? `
-                    <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-amber-50 text-amber-900 border border-amber-100 rounded-xl px-3 py-2 mt-2">
-                        <div class="font-bold">ปรับยอด ledger</div>
-                        <div class="text-right font-black">${fmt(adjustment.total)}</div>
-                        <div class="text-right font-black">${fmt(adjustment.capital)}</div>
-                        <div class="text-right font-black">${fmt(adjustment.profit)}</div>
-                    </div>
-                ` : ''}
                 <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-slate-900 text-white rounded-xl px-3 py-3 mt-3">
                     <div class="font-black">รวม</div>
                     <div class="text-right font-black">${fmt(totals.total)}</div>
