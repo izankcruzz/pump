@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-date-bound-list-v64";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-money-chart-v65";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -775,6 +775,19 @@
     const bestSellerItems = sortByQtySold(sumRowsByName(salesList));
     const monthlyPayments = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type !== "stock")];
     const capitalItems = [...sumRowsByName(purchaseList), ...expenseList.filter(row => row.type === "stock")];
+    const chartDays = [];
+    for (let day = from; day <= to; day = addDays(day, 1)) {
+      chartDays.push(day);
+      if (chartDays.length > 370) break;
+    }
+    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0 }]));
+    salesList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
+      chartByDay[day].total += Number(row.total || 0);
+      chartByDay[day].capital += Number(row.costTotal || 0);
+      chartByDay[day].profit += Number(row.profit || 0);
+    });
 
     return {
       summary: {
@@ -813,11 +826,13 @@
         fuelTests
       },
       chart: {
-        labels: [from === to ? thaiDate(from) : `${from} - ${to}`],
+        labels: chartDays.map(day => thaiDate(day)),
         data: {
-          sales: [totalSales],
-          cash: [netCash],
-          profit: [headerNetProfit]
+          total: chartDays.map(day => chartByDay[day].total),
+          capital: chartDays.map(day => chartByDay[day].capital),
+          profit: chartDays.map(day => chartByDay[day].profit),
+          sales: chartDays.map(day => chartByDay[day].total),
+          cash: chartDays.map(day => chartByDay[day].capital)
         }
       },
       monthlyOilSummary: {

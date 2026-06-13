@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-date-bound-list-v64"></script>
+    <script src="./supabase-adapter.js?v=20260613-daily-money-chart-v65"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -1835,7 +1835,7 @@
                 : "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col";
 
             const chartTitle = document.getElementById('chart-title');
-            if (chartTitle) chartTitle.innerText = isMonth ? "สถิติ 1 เดือน" : "สถิติ 7 วันย้อนหลัง";
+            if (chartTitle) chartTitle.innerText = isMonth ? "สรุปยอดเงินรายวัน" : "สรุปยอดเงินรายวัน";
         }
 
         function renderDashMoneyDetails(summary, monthlySummary) {
@@ -2425,7 +2425,7 @@
                 if (dailyListTitle) dailyListTitle.innerText = `รายการวันที่ ${dateDisplay}`;
                 renderDashboardDailyLists(data);
 
-                document.getElementById('chart-title').innerText = "สถิติช่วงวันที่ที่เลือก";
+                document.getElementById('chart-title').innerText = "สรุปยอดเงินรายวัน";
 
                 // Render chart for date range
                 if (data.chart && data.chart.labels && data.chart.data) {
@@ -2642,7 +2642,44 @@
             }).withFailureHandler(err => { alert("❌ โหลดข้อมูลไม่สำเร็จ: " + err.message); if (icon) icon.classList.remove('fa-spin'); btn.disabled = false; }).getDashboardData(currentDashMode, sendDate);
         }
 
-        function renderChart(labels, data) { const ctx = document.getElementById('salesChart').getContext('2d'); if (salesChart) salesChart.destroy(); salesChart = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'ยอดขาย', data: data.sales, backgroundColor: '#4f46e5', borderRadius: 4 }, { label: 'เงินสด', data: data.cash, backgroundColor: '#3b82f6', borderRadius: 4 }, { label: 'กำไร', data: data.profit, backgroundColor: '#a855f7', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } }, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, beginAtZero: true } } } }); }
+        function renderChart(labels, data) {
+            const ctx = document.getElementById('salesChart').getContext('2d');
+            if (salesChart) salesChart.destroy();
+            const moneyTotal = data.total || data.sales || [];
+            const capitalTotal = data.capital || data.cash || [];
+            const profitTotal = data.profit || [];
+            salesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'เงินรวม', data: moneyTotal, backgroundColor: '#4f46e5', borderRadius: 4 },
+                        { label: 'เงินทุน', data: capitalTotal, backgroundColor: '#0ea5e9', borderRadius: 4 },
+                        { label: 'เงินกำไร', data: profitTotal, backgroundColor: '#a855f7', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
+                        tooltip: {
+                            callbacks: {
+                                label: context => `${context.dataset.label}: ${(Number(context.parsed.y) || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: {
+                            grid: { color: '#f1f5f9' },
+                            beginAtZero: true,
+                            ticks: { callback: value => Number(value || 0).toLocaleString('th-TH') }
+                        }
+                    }
+                }
+            });
+        }
 
         // ✅ ปรับแก้ Render Products: Mobile=1 Col (List), Desktop=Grid
         function renderProducts() {
