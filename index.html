@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-capital-wallet-v80"></script>
+    <script src="./supabase-adapter.js?v=20260613-capital-movement-v82"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -304,7 +304,18 @@
                     <section class="bg-white rounded-lg border border-cyan-100 p-4 shadow-sm">
                         <div class="flex items-center justify-between gap-2 mb-3">
                             <div class="text-sm font-black text-slate-700">เงินทุนคงเหลือ</div>
-                            <i class="fa-solid fa-vault text-cyan-500"></i>
+                            <div class="flex items-center gap-2">
+                                <button onclick="openCapitalMovementModal('out')"
+                                    class="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 flex items-center justify-center transition-all"
+                                    title="นำเงินทุนออก"><i class="fa-solid fa-arrow-up-from-bracket text-xs"></i></button>
+                                <button onclick="openCapitalMovementModal('in')"
+                                    class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100 flex items-center justify-center transition-all"
+                                    title="นำเงินทุนเข้า"><i class="fa-solid fa-arrow-down text-xs"></i></button>
+                                <button onclick="openCapitalResetModal()"
+                                    class="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 hover:bg-cyan-100 border border-cyan-100 flex items-center justify-center transition-all"
+                                    title="ตั้งยอดเงินทุนคงเหลือ"><i class="fa-solid fa-pen-to-square text-xs"></i></button>
+                                <i class="fa-solid fa-vault text-cyan-500"></i>
+                            </div>
                         </div>
                         <div class="text-2xl md:text-3xl font-black text-slate-900 leading-tight" id="dash-capital">...</div>
                         <div id="dash-capital-detail" class="mt-2 text-[11px] leading-snug text-slate-500">...</div>
@@ -1402,6 +1413,73 @@
         </div>
     </div>
 
+    <div id="capital-movement-modal" class="hidden fixed inset-0 z-[93] flex items-center justify-center modal-overlay p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl scale-up-center relative">
+            <button onclick="closeCapitalMovementModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i
+                    class="fa-solid fa-times text-xl"></i></button>
+            <h3 id="capital-movement-title" class="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><i
+                    class="fa-solid fa-vault"></i> เงินทุน</h3>
+            <input type="hidden" id="capital-movement-direction" value="out">
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">วันที่</label>
+                    <input type="date" id="capital-movement-date"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">จำนวนเงิน (บาท)</label>
+                    <input type="number" id="capital-movement-amount"
+                        class="w-full p-3 border border-slate-200 rounded-xl text-right font-bold text-2xl text-slate-800 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition"
+                        placeholder="0" step="0.01">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">หมายเหตุ</label>
+                    <input type="text" id="capital-movement-note"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition"
+                        placeholder="เช่น ใช้ฉุกเฉิน / คืนเงินทุน">
+                </div>
+                <div id="capital-movement-hint" class="rounded-2xl p-3 text-xs leading-relaxed"></div>
+            </div>
+            <button id="capital-movement-submit" onclick="submitCapitalMovement()"
+                class="w-full mt-6 text-white py-3.5 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform"><i
+                    class="fa-solid fa-save mr-2"></i>บันทึก</button>
+        </div>
+    </div>
+
+    <div id="capital-reset-modal" class="hidden fixed inset-0 z-[93] flex items-center justify-center modal-overlay p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl scale-up-center relative">
+            <button onclick="closeCapitalResetModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i
+                    class="fa-solid fa-times text-xl"></i></button>
+            <h3 class="text-lg font-bold text-cyan-700 mb-6 flex items-center gap-2"><i
+                    class="fa-solid fa-vault"></i> ตั้งยอดเงินทุนคงเหลือ</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">วันที่เริ่มใช้ยอดนี้</label>
+                    <input type="date" id="capital-reset-date"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">เงินทุนคงเหลือจริง (บาท)</label>
+                    <input type="number" id="capital-reset-amount"
+                        class="w-full p-3 border border-slate-200 rounded-xl text-right font-bold text-2xl text-cyan-700 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition"
+                        placeholder="45569" step="0.01">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase">หมายเหตุ</label>
+                    <input type="text" id="capital-reset-note"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 outline-none transition"
+                        placeholder="เช่น ตั้งยอดทุนจริงหลังตรวจเงินสด">
+                </div>
+                <div class="bg-cyan-50 border border-cyan-100 rounded-2xl p-3 text-xs text-cyan-800 leading-relaxed">
+                    ระบบจะไม่ลบยอดขายหรือรายการซื้อเก่า แต่จะใช้ยอดนี้เป็นฐานเงินทุนคงเหลือตั้งแต่เวลาบันทึก แล้วคำนวณรายการใหม่ต่อจากฐานนี้
+                </div>
+            </div>
+            <button onclick="submitCapitalBalanceReset()"
+                class="w-full mt-6 bg-gradient-to-r from-cyan-600 to-sky-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-cyan-200 active:scale-95 transition-transform"><i
+                    class="fa-solid fa-save mr-2"></i>บันทึกยอดตั้งต้น</button>
+        </div>
+    </div>
+
     <div id="add-product-modal"
         class="hidden fixed inset-0 z-[92] flex items-end md:items-center justify-center modal-overlay p-0 md:p-4">
         <div
@@ -2481,7 +2559,7 @@
                 setTextIfExists('dash-profit', fmt0(data.summary.netProfit));
                 setTextIfExists('dash-profit-balance', `${fmt0(data.summary.profitBalance)} บาท`);
                 setTextIfExists('dash-capital', fmt0(data.summary.capitalBalance));
-                setTextIfExists('dash-capital-detail', `ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)}`);
+                setTextIfExists('dash-capital-detail', `ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)} | นำเข้า ${fmt0(data.summary.capitalManualIn || 0)} | นำออก ${fmt0(data.summary.capitalManualOut || 0)}`);
                 setTextIfExists('dash-capital-day', fmt0(data.summary.capitalReturned));
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
@@ -2585,7 +2663,7 @@
                 setTextIfExists('dash-profit', data.summary.netProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-profit-balance', `${data.summary.profitBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
                 setTextIfExists('dash-capital', data.summary.capitalBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
-                setTextIfExists('dash-capital-detail', `ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
+                setTextIfExists('dash-capital-detail', `ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำเข้า ${(data.summary.capitalManualIn || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำออก ${(data.summary.capitalManualOut || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
                 setTextIfExists('dash-capital-day', data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 setTextIfExists('dash-repaid', (data.summary.debtRepaid || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
@@ -3241,6 +3319,83 @@
             setTimeout(() => document.getElementById('capital-wallet-amount').focus(), 100);
         }
         function closeCapitalWalletModal() { document.getElementById('capital-wallet-modal').classList.add('hidden'); }
+        function openCapitalMovementModal(direction) {
+            const isOut = direction === 'out';
+            document.getElementById('capital-movement-direction').value = isOut ? 'out' : 'in';
+            document.getElementById('capital-movement-date').value = getLocalIsoDate(new Date());
+            document.getElementById('capital-movement-amount').value = '';
+            document.getElementById('capital-movement-note').value = '';
+            const title = document.getElementById('capital-movement-title');
+            const hint = document.getElementById('capital-movement-hint');
+            const submit = document.getElementById('capital-movement-submit');
+            title.className = `text-lg font-bold ${isOut ? 'text-red-700' : 'text-emerald-700'} mb-6 flex items-center gap-2`;
+            title.innerHTML = `<i class="fa-solid ${isOut ? 'fa-arrow-up-from-bracket' : 'fa-arrow-down'}"></i> ${isOut ? 'นำเงินทุนออก' : 'นำเงินทุนเข้า'}`;
+            hint.className = `${isOut ? 'bg-red-50 border-red-100 text-red-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'} border rounded-2xl p-3 text-xs leading-relaxed`;
+            hint.innerText = isOut
+                ? 'ใช้เมื่อนำเงินทุนออกไปใช้เรื่องฉุกเฉิน ยอดนี้จะลดเงินทุนคงเหลือ แต่ไม่กระทบยอดขายหรือกำไร'
+                : 'ใช้เมื่อนำเงินกลับเข้ากองทุน ยอดนี้จะเพิ่มเงินทุนคงเหลือ แต่ไม่กระทบยอดขายหรือกำไร';
+            submit.className = `w-full mt-6 ${isOut ? 'bg-gradient-to-r from-red-600 to-rose-600 shadow-red-200' : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-200'} text-white py-3.5 rounded-2xl font-bold shadow-lg active:scale-95 transition-transform`;
+            document.getElementById('capital-movement-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('capital-movement-amount').focus(), 100);
+        }
+        function closeCapitalMovementModal() { document.getElementById('capital-movement-modal').classList.add('hidden'); }
+        function submitCapitalMovement() {
+            const direction = document.getElementById('capital-movement-direction').value === 'out' ? 'out' : 'in';
+            const entryDate = document.getElementById('capital-movement-date').value || getLocalIsoDate(new Date());
+            const amount = parseFloat(document.getElementById('capital-movement-amount').value);
+            const note = document.getElementById('capital-movement-note').value;
+            if (!amount || amount <= 0) return alert("กรุณากรอกจำนวนเงิน");
+            const label = direction === 'out' ? 'นำเงินทุนออก' : 'นำเงินทุนเข้า';
+            const displayAmount = Math.round(amount).toLocaleString('th-TH');
+            if (!confirm(`ยืนยัน${label} ${displayAmount} บาท ใช่ไหม`)) return;
+            const btn = document.getElementById('capital-movement-submit');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> กำลังบันทึก...';
+            btn.disabled = true;
+            google.script.run.withSuccessHandler((res) => {
+                showSuccess(res || "บันทึกแล้ว");
+                closeCapitalMovementModal();
+                loadDashboard();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).withFailureHandler(e => {
+                alert("❌ เกิดข้อผิดพลาด: " + e.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).saveCapitalMovement({ direction, entryDate, amount, note });
+        }
+        function openCapitalResetModal() {
+            const today = getLocalIsoDate(new Date());
+            document.getElementById('capital-reset-date').value = today;
+            document.getElementById('capital-reset-amount').value = '';
+            document.getElementById('capital-reset-note').value = '';
+            document.getElementById('capital-reset-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('capital-reset-amount').focus(), 100);
+        }
+        function closeCapitalResetModal() { document.getElementById('capital-reset-modal').classList.add('hidden'); }
+        function submitCapitalBalanceReset() {
+            const entryDate = document.getElementById('capital-reset-date').value || getLocalIsoDate(new Date());
+            const amount = parseFloat(document.getElementById('capital-reset-amount').value);
+            const note = document.getElementById('capital-reset-note').value;
+            if (Number.isNaN(amount) || amount < 0) return alert("กรุณากรอกยอดเงินทุนคงเหลือ");
+            const displayAmount = Math.round(amount).toLocaleString('th-TH');
+            if (!confirm(`ยืนยันตั้งยอดเงินทุนคงเหลือเป็น ${displayAmount} บาท ใช่ไหม`)) return;
+            const btn = document.querySelector('#capital-reset-modal button.bg-gradient-to-r');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> กำลังบันทึก...';
+            btn.disabled = true;
+            google.script.run.withSuccessHandler((res) => {
+                showSuccess(res || "ตั้งยอดเงินทุนคงเหลือแล้ว");
+                closeCapitalResetModal();
+                loadDashboard();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).withFailureHandler(e => {
+                alert("❌ เกิดข้อผิดพลาด: " + e.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).saveCapitalBalanceReset({ entryDate, amount, note });
+        }
         function submitCapitalWalletEntry() {
             const type = document.getElementById('capital-wallet-type').value;
             const amount = parseFloat(document.getElementById('capital-wallet-amount').value);

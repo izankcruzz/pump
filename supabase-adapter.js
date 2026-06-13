@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-capital-wallet-v80";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-capital-movement-v82";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -506,6 +506,52 @@
     return txType === "deposit" ? "บันทึกฝากเงินทุนแล้ว" : "ปรับยอดเงินฝากทุนแล้ว";
   }
 
+  async function saveCapitalBalanceReset(form) {
+    const db = await ensureReady();
+    const amount = Number(form.amount || 0);
+    const entryDate = String(form.entryDate || bkkDate()).slice(0, 10);
+    const note = String(form.note || "").trim();
+    if (amount < 0) throw new Error("capital balance must not be negative");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) throw new Error("invalid reset date");
+    const { error } = await db.from("money_ledger").insert({
+      ledger_type: "capital",
+      entry_date: entryDate,
+      income_amount: amount,
+      expense_amount: 0,
+      net_amount: amount,
+      balance_amount: amount,
+      income_detail: note || `Reset capital balance to ${amount.toFixed(2)}`,
+      expense_detail: null,
+      source: "manual-reset"
+    });
+    if (error) throw error;
+    return "ตั้งยอดเงินทุนคงเหลือแล้ว";
+  }
+
+  async function saveCapitalMovement(form) {
+    const db = await ensureReady();
+    const amount = Number(form.amount || 0);
+    const entryDate = String(form.entryDate || bkkDate()).slice(0, 10);
+    const direction = form.direction === "out" ? "out" : "in";
+    const note = String(form.note || "").trim();
+    if (amount <= 0) throw new Error("capital movement amount must be greater than zero");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) throw new Error("invalid movement date");
+    const isOut = direction === "out";
+    const { error } = await db.from("money_ledger").insert({
+      ledger_type: "capital",
+      entry_date: entryDate,
+      income_amount: isOut ? 0 : amount,
+      expense_amount: isOut ? amount : 0,
+      net_amount: isOut ? -amount : amount,
+      balance_amount: 0,
+      income_detail: isOut ? null : (note || `Capital deposit ${amount.toFixed(2)}`),
+      expense_detail: isOut ? (note || `Capital withdrawal ${amount.toFixed(2)}`) : null,
+      source: isOut ? "manual-withdraw" : "manual-deposit"
+    });
+    if (error) throw error;
+    return isOut ? "บันทึกนำทุนออกแล้ว" : "บันทึกนำทุนเข้าแล้ว";
+  }
+
   async function getDebtPageData() {
     const db = await ensureReady();
     const rows = await productRows();
@@ -779,9 +825,11 @@
     const generalExpenses = liveGeneralExpenses;
     const profit = liveProfit;
     const headerNetProfit = liveProfit - liveGeneralExpenses;
+    const capitalManualIn = balanceDeltas.capitalManualIn || 0;
+    const capitalManualOut = balanceDeltas.capitalManualOut || 0;
     const capitalBalance = ledgerBalances.capital !== null
-      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid
-      : liveCapitalReturned - liveStockPaid;
+      ? ledgerBalances.capital + balanceDeltas.capitalReturned - balanceDeltas.stockPaid + capitalManualIn - capitalManualOut
+      : liveCapitalReturned - liveStockPaid + capitalManualIn - capitalManualOut;
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
@@ -873,6 +921,8 @@
         walletAdjust,
         walletBalance: walletDeposit + walletAdjust - walletUsed,
         capitalReturned,
+        capitalManualIn,
+        capitalManualOut,
         capitalNet: capitalReturned - stockPaid,
         capitalBalance,
         profitBalance,
@@ -880,6 +930,8 @@
         openingProfitBalance: ledgerBalances.profit,
         balanceDeltaCapitalReturned: balanceDeltas.capitalReturned,
         balanceDeltaStockPaid: balanceDeltas.stockPaid,
+        balanceDeltaCapitalManualIn: capitalManualIn,
+        balanceDeltaCapitalManualOut: capitalManualOut,
         balanceDeltaProfit: balanceDeltas.profit,
         balanceDeltaGeneralExpenses: balanceDeltas.generalExpenses,
         generalExpenses
@@ -969,6 +1021,31 @@
       return sum;
     }, { income: 0, expense: 0, net: 0 });
     const latestValue = values => values.filter(Boolean).map(String).sort().pop() || null;
+    const readManualReset = async ledgerType => {
+      if (!toDate) return;
+      const { data, error } = await db
+        .from("money_ledger")
+        .select("entry_date,balance_amount,created_at")
+        .eq("ledger_type", ledgerType)
+        .eq("source", "manual-reset")
+        .lte("entry_date", toDate)
+        .order("entry_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      const row = (data || [])[0];
+      if (!row) return;
+      if (ledgerType === "capital") {
+        result.capital = num(row.balance_amount);
+        result.capitalDate = row.entry_date;
+        result.capitalCreatedAt = row.created_at || null;
+      }
+      if (ledgerType === "profit") {
+        result.profit = num(row.balance_amount);
+        result.profitDate = row.entry_date;
+        result.profitCreatedAt = row.created_at || null;
+      }
+    };
     const findMonthlyTotalRow = rows => {
       const list = rows || [];
       if (list.length < 2) return null;
@@ -996,6 +1073,8 @@
 
     const readLedgerSummary = async ledgerType => {
       if (!toDate) return;
+      if (ledgerType === "capital" && result.capital !== null) return;
+      if (ledgerType === "profit" && result.profit !== null) return;
       const { data, error } = await db
         .from("money_ledger")
         .select("entry_date,income_amount,expense_amount,net_amount,balance_amount,created_at")
@@ -1052,6 +1131,8 @@
     };
 
     try {
+      await readManualReset("capital");
+      await readManualReset("profit");
       await readLedgerSummary("capital");
       await readLedgerSummary("profit");
     } catch (err) {
@@ -1174,7 +1255,7 @@
   }
 
   async function getBalanceDeltas(db, productByName, ledgerBalances, toDate) {
-    const result = { capitalReturned: 0, stockPaid: 0, profit: 0, generalExpenses: 0 };
+    const result = { capitalReturned: 0, stockPaid: 0, profit: 0, generalExpenses: 0, capitalManualIn: 0, capitalManualOut: 0 };
     const startDates = [ledgerBalances.capitalDate, ledgerBalances.profitDate]
       .filter(Boolean)
       .map(String);
@@ -1185,14 +1266,16 @@
 
     const start = `${fromDate}T00:00:00+07:00`;
     const end = `${toDate}T23:59:59+07:00`;
-    const [salesRes, expensesRes, purchasesRes] = await Promise.all([
+    const [salesRes, expensesRes, purchasesRes, ledgerRes] = await Promise.all([
       db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
-      db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end)
+      db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
+      db.from("money_ledger").select("*").eq("ledger_type", "capital").in("source", ["manual-deposit", "manual-withdraw"]).gte("entry_date", fromDate).lte("entry_date", toDate)
     ]);
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
     if (purchasesRes.error) throw purchasesRes.error;
+    if (ledgerRes.error) throw ledgerRes.error;
 
     const shouldApplyDelta = (day, ledgerDate, cutoff, createdAt) => {
       if (!ledgerDate) return true;
@@ -1227,6 +1310,13 @@
       const day = bkkDate(row.purchased_at);
       const amount = Number(row.total || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0);
       if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.stockPaid += amount;
+    });
+
+    (ledgerRes.data || []).forEach(row => {
+      const day = String(row.entry_date || "").slice(0, 10);
+      if (!shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) return;
+      if (row.source === "manual-deposit") result.capitalManualIn += Number(row.income_amount || row.net_amount || 0);
+      if (row.source === "manual-withdraw") result.capitalManualOut += Number(row.expense_amount || Math.abs(Number(row.net_amount || 0)) || 0);
     });
 
     return result;
@@ -1599,6 +1689,8 @@
     saveFuelLog,
     saveStockIn,
     saveCapitalWalletEntry,
+    saveCapitalBalanceReset,
+    saveCapitalMovement,
     getDebtPageData,
     saveDebtTransaction,
     clearDebtByCustomer,
