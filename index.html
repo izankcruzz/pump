@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-capital-table-v83"></script>
+    <script src="./supabase-adapter.js?v=20260613-capital-table-v84"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -264,7 +264,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-[1.45fr_1fr] gap-3 mb-4" id="dashboard-summary-grid">
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-3 mb-4" id="dashboard-summary-grid">
                     <section class="bg-white rounded-lg border border-violet-100 p-4 shadow-sm" id="dash-cash-summary-card">
                         <div class="flex items-center justify-between gap-2 mb-3">
                             <div class="text-sm font-black text-slate-700">แยกเงินสดวันนี้</div>
@@ -305,7 +305,7 @@
                         <div id="dash-profit-detail" class="hidden mt-3 pt-3 border-t border-violet-100 space-y-2 text-xs text-slate-600 max-h-64 overflow-y-auto pr-1"></div>
                     </section>
 
-                    <section class="bg-white rounded-lg border border-cyan-100 p-4 shadow-sm">
+                    <section class="bg-white rounded-lg border border-cyan-100 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-2 mb-3">
                             <div class="text-sm font-black text-slate-700">เงินทุนคงเหลือ</div>
                             <div class="flex items-center gap-2">
@@ -2799,7 +2799,7 @@
             const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[1220px] border-collapse text-sm">
+                    <table class="w-full min-w-[1080px] border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
                                 <th class="px-4 py-3 text-left">วันที่</th>
