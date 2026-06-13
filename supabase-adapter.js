@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-money-chart-v65";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-money-text-summary-v66";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";

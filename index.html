@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-daily-money-chart-v65"></script>
+    <script src="./supabase-adapter.js?v=20260613-money-text-summary-v66"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -552,10 +552,10 @@
                     <div
                         class="bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col" id="dash-chart-card">
                         <h3 class="text-base font-bold text-slate-700 mb-3 flex items-center gap-2"><i
-                                class="fa-solid fa-chart-simple text-indigo-500"></i> <span id="chart-title">สถิติ 7
-                                วันย้อนหลัง</span></h3>
-                        <div class="relative flex-1 w-full min-h-0 bg-slate-50 rounded-lg p-2 border border-slate-100">
-                            <canvas id="salesChart"></canvas>
+                                class="fa-solid fa-list-check text-indigo-500"></i> <span id="chart-title">สรุปยอดเงินรายวัน</span></h3>
+                        <div id="money-daily-summary"
+                            class="flex-1 overflow-y-auto bg-slate-50 rounded-lg p-3 border border-slate-100 space-y-2">
+                            <div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">กำลังโหลด...</div>
                         </div>
                     </div>
                 </div>
@@ -1824,18 +1824,27 @@
             const monthlyPanel = document.getElementById('monthly-panel');
             const dailyListCard = document.getElementById('daily-list-card');
             const chartCard = document.getElementById('dash-chart-card');
+            const isRange = currentDashMode === 'range';
             if (monthControls) {
                 monthControls.classList.toggle('hidden', !isMonth);
                 monthControls.classList.toggle('flex', isMonth);
             }
             if (monthlyPanel) monthlyPanel.classList.toggle('hidden', !isMonth);
-            if (dailyListCard) dailyListCard.classList.toggle('hidden', isMonth);
-            if (chartCard) chartCard.className = isMonth
-                ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col xl:col-span-2"
-                : "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col";
+            if (dailyListCard) {
+                dailyListCard.className = isMonth
+                    ? "hidden"
+                    : `bg-white rounded-lg border border-slate-100 shadow-sm flex flex-col h-[520px] overflow-hidden${isRange ? "" : " xl:col-span-2"}`;
+            }
+            if (chartCard) {
+                chartCard.className = isMonth
+                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col xl:col-span-2"
+                    : isRange
+                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col"
+                    : "hidden";
+            }
 
             const chartTitle = document.getElementById('chart-title');
-            if (chartTitle) chartTitle.innerText = isMonth ? "สรุปยอดเงินรายวัน" : "สรุปยอดเงินรายวัน";
+            if (chartTitle) chartTitle.innerText = "สรุปยอดเงินรายวัน";
         }
 
         function renderDashMoneyDetails(summary, monthlySummary) {
@@ -2380,6 +2389,7 @@
         }
 
         function loadDashboardWithRange() {
+            setDashboardViewState();
             const btn = document.getElementById('btn-dash-reload');
             const icon = btn.querySelector('i');
             if (icon) icon.classList.add('fa-spin');
@@ -2643,42 +2653,56 @@
         }
 
         function renderChart(labels, data) {
-            const ctx = document.getElementById('salesChart').getContext('2d');
-            if (salesChart) salesChart.destroy();
+            if (salesChart) {
+                salesChart.destroy();
+                salesChart = null;
+            }
+            const container = document.getElementById('money-daily-summary');
+            if (!container) return;
             const moneyTotal = data.total || data.sales || [];
             const capitalTotal = data.capital || data.cash || [];
             const profitTotal = data.profit || [];
-            salesChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'เงินรวม', data: moneyTotal, backgroundColor: '#4f46e5', borderRadius: 4 },
-                        { label: 'เงินทุน', data: capitalTotal, backgroundColor: '#0ea5e9', borderRadius: 4 },
-                        { label: 'เงินกำไร', data: profitTotal, backgroundColor: '#a855f7', borderRadius: 4 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
-                        tooltip: {
-                            callbacks: {
-                                label: context => `${context.dataset.label}: ${(Number(context.parsed.y) || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`
-                            }
-                        }
-                    },
-                    scales: {
-                        x: { grid: { display: false } },
-                        y: {
-                            grid: { color: '#f1f5f9' },
-                            beginAtZero: true,
-                            ticks: { callback: value => Number(value || 0).toLocaleString('th-TH') }
-                        }
-                    }
-                }
-            });
+            const rows = (labels || []).map((label, idx) => ({
+                label,
+                total: Number(moneyTotal[idx] || 0),
+                capital: Number(capitalTotal[idx] || 0),
+                profit: Number(profitTotal[idx] || 0)
+            }));
+            const activeRows = rows.filter(row => row.total || row.capital || row.profit);
+            const visibleRows = activeRows.length ? activeRows : rows;
+            if (!visibleRows.length) {
+                container.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีข้อมูล</div>';
+                return;
+            }
+            const fmt = value => `${Math.round(Number(value) || 0).toLocaleString('th-TH')} บาท`;
+            const totals = rows.reduce((sum, row) => ({
+                total: sum.total + row.total,
+                capital: sum.capital + row.capital,
+                profit: sum.profit + row.profit
+            }), { total: 0, capital: 0, profit: 0 });
+            container.innerHTML = `
+                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-2 text-xs font-black text-slate-500 border-b border-slate-200">
+                    <div>วันที่</div>
+                    <div class="text-right">เงินรวม</div>
+                    <div class="text-right">เงินทุน</div>
+                    <div class="text-right">เงินกำไร</div>
+                </div>
+                <div class="space-y-2">
+                    ${visibleRows.map(row => `
+                        <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-white border border-slate-100 rounded-xl px-3 py-2 shadow-sm">
+                            <div class="font-bold text-slate-700">${escapeHtml(row.label)}</div>
+                            <div class="text-right font-black text-indigo-600">${fmt(row.total)}</div>
+                            <div class="text-right font-black text-sky-600">${fmt(row.capital)}</div>
+                            <div class="text-right font-black ${row.profit < 0 ? 'text-red-600' : 'text-purple-600'}">${fmt(row.profit)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center bg-slate-900 text-white rounded-xl px-3 py-3 mt-3">
+                    <div class="font-black">รวม</div>
+                    <div class="text-right font-black">${fmt(totals.total)}</div>
+                    <div class="text-right font-black">${fmt(totals.capital)}</div>
+                    <div class="text-right font-black">${fmt(totals.profit)}</div>
+                </div>`;
         }
 
         // ✅ ปรับแก้ Render Products: Mobile=1 Col (List), Desktop=Grid
