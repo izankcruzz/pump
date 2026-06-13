@@ -2805,7 +2805,7 @@
                 stockPaid: Number(stockPaidTotal[idx] || 0),
                 walletUsed: Number(walletUsedTotal[idx] || 0),
                 debt: Number(debtTotal[idx] || 0),
-                net: Number(capitalTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0)
+                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2823,7 +2823,7 @@
                 net: sum.net + row.net
             }), { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, net: 0 });
             const totals = { ...rawTotals, ...(ledgerTotals || {}) };
-            totals.net = Number(totals.net ?? (Number(totals.capital || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0)));
+            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
@@ -2833,17 +2833,16 @@
             const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[1220px] border-collapse text-sm">
+                    <table class="w-full min-w-[1080px] border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
                                 <th class="px-4 py-3 text-left">วันที่</th>
                                 <th class="px-4 py-3 text-right">ยอดขาย</th>
-                                <th class="px-4 py-3 text-right">ต้นทุน</th>
                                 <th class="px-4 py-3 text-right">กำไร</th>
                                 <th class="px-4 py-3 text-right">จ่ายทุน</th>
                                 <th class="px-4 py-3 text-right">เงินฝากใช้</th>
                                 <th class="px-4 py-3 text-right">ค้างชำระ</th>
-                                <th class="px-4 py-3 text-right">เงินทุนสุทธิ</th>
+                                <th class="px-4 py-3 text-right">เงินสดจริง</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -2851,7 +2850,6 @@
                                 <tr class="${idx % 2 ? 'bg-slate-50/70' : 'bg-white'} hover:bg-indigo-50/40 transition-colors">
                                     <td class="px-4 py-3 font-black text-slate-700 whitespace-nowrap">${escapeHtml(row.label)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${moneyClass(row.total)}">${fmt(row.total)}</td>
-                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capital)}">${fmt(row.capital)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${walletClass(row.walletUsed)}">${fmt(row.walletUsed)}</td>
@@ -2864,7 +2862,6 @@
                             <tr class="bg-slate-900 text-white">
                                 <td class="px-4 py-4 font-black rounded-bl-xl">รวม</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.total)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capital)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.walletUsed)}</td>
