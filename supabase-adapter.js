@@ -833,7 +833,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
-    const netCash = totalSales + walletUsed - totalDebt - generalExpenses + debtRepaid;
+    const netCash = totalSales + walletUsed - stockPaid - totalDebt - generalExpenses + debtRepaid;
     const sumRowsByName = items => {
       const map = new Map();
       (items || []).forEach(item => {
