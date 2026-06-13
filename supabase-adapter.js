@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-sales-cost-summary-v72";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-full-daily-sales-summary-v73";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";

@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-sales-cost-summary-v72"></script>
+    <script src="./supabase-adapter.js?v=20260613-full-daily-sales-summary-v73"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2673,8 +2673,7 @@
                 capital: Number(capitalTotal[idx] || 0),
                 profit: Number(profitTotal[idx] || 0)
             }));
-            const activeRows = rows.filter(row => row.total || row.capital || row.profit);
-            const visibleRows = activeRows.length ? activeRows : rows;
+            const visibleRows = rows;
             if (!visibleRows.length) {
                 container.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีข้อมูล</div>';
                 return;
