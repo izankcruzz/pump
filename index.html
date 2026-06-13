@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-fuel-log-delete-revert-v76"></script>
+    <script src="./supabase-adapter.js?v=20260613-daily-table-capital-debt-v77"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2666,12 +2666,16 @@
             const moneyTotal = data.total || data.sales || [];
             const capitalTotal = data.capital || data.cash || [];
             const profitTotal = data.profit || [];
+            const stockPaidTotal = data.stockPaid || [];
+            const debtTotal = data.debt || [];
             const ledgerTotals = data.totals || null;
             const rows = (labels || []).map((label, idx) => ({
                 label,
                 total: Number(moneyTotal[idx] || 0),
                 capital: Number(capitalTotal[idx] || 0),
-                profit: Number(profitTotal[idx] || 0)
+                profit: Number(profitTotal[idx] || 0),
+                stockPaid: Number(stockPaidTotal[idx] || 0),
+                debt: Number(debtTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2682,21 +2686,27 @@
             const rawTotals = rows.reduce((sum, row) => ({
                 total: sum.total + row.total,
                 capital: sum.capital + row.capital,
-                profit: sum.profit + row.profit
-            }), { total: 0, capital: 0, profit: 0 });
+                profit: sum.profit + row.profit,
+                stockPaid: sum.stockPaid + row.stockPaid,
+                debt: sum.debt + row.debt
+            }), { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 });
             const totals = ledgerTotals || rawTotals;
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
+            const stockPaidClass = value => value === 0 ? 'text-slate-400' : 'text-orange-600';
+            const debtClass = value => value === 0 ? 'text-slate-400' : 'text-red-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[680px] border-collapse text-sm">
+                    <table class="w-full min-w-[920px] border-collapse text-sm">
                         <thead>
                             <tr class="bg-slate-100 text-xs font-black text-slate-500">
                                 <th class="px-4 py-3 text-left">วันที่</th>
                                 <th class="px-4 py-3 text-right">ยอดขาย</th>
                                 <th class="px-4 py-3 text-right">ต้นทุน</th>
                                 <th class="px-4 py-3 text-right">กำไร</th>
+                                <th class="px-4 py-3 text-right">จ่ายทุน</th>
+                                <th class="px-4 py-3 text-right">ค้างชำระ</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -2706,6 +2716,8 @@
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${moneyClass(row.total)}">${fmt(row.total)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${capitalClass(row.capital)}">${fmt(row.capital)}</td>
                                     <td class="px-4 py-3 text-right font-black whitespace-nowrap ${profitClass(row.profit)}">${fmt(row.profit)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
+                                    <td class="px-4 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2714,7 +2726,9 @@
                                 <td class="px-4 py-4 font-black rounded-bl-xl">รวม</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.total)}</td>
                                 <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.capital)}</td>
-                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.profit)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.profit)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
+                                <td class="px-4 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.debt)}</td>
                             </tr>
                         </tfoot>
                     </table>

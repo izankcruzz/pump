@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-fuel-log-delete-revert-v76";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-daily-table-capital-debt-v77";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -772,13 +772,28 @@
       chartDays.push(day);
       if (chartDays.length > 370) break;
     }
-    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0 }]));
+    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 }]));
     salesList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
       chartByDay[day].total += Number(row.total || 0);
       chartByDay[day].capital += Number(row.costTotal || 0);
       chartByDay[day].profit += Number(row.profit || 0);
+    });
+    purchaseList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      chartByDay[day].stockPaid += Number(row.amount || 0);
+    });
+    expenseList.filter(row => row.type === "stock").forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      chartByDay[day].stockPaid += Number(row.amount || 0);
+    });
+    periodDebtList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, debt: 0 };
+      chartByDay[day].debt += Number(row.amount || 0);
     });
     return {
       summary: {
@@ -822,12 +837,16 @@
           total: chartDays.map(day => chartByDay[day].total),
           capital: chartDays.map(day => chartByDay[day].capital),
           profit: chartDays.map(day => chartByDay[day].profit),
+          stockPaid: chartDays.map(day => chartByDay[day].stockPaid),
+          debt: chartDays.map(day => chartByDay[day].debt),
           sales: chartDays.map(day => chartByDay[day].total),
           cash: chartDays.map(day => chartByDay[day].capital),
           totals: {
             total: totalSales,
             capital: capitalReturned,
-            profit
+            profit,
+            stockPaid,
+            debt: totalDebt
           }
         }
       },
