@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-purchase-capital-live-v62";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-date-bound-capital-balance-v63";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -711,7 +711,7 @@
     const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
     const liveStockPaid = livePurchasePaid + expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
-    const balanceDate = bkkDate();
+    const balanceDate = requestedTo;
     const ledgerBalances = await getArchiveBalances(balanceDate, "month", `${balanceDate.slice(0, 7)}-01`);
     const balanceDeltas = await getBalanceDeltas(db, productByName, ledgerBalances, balanceDate);
     const periodDeltas = await getBalanceDeltas(db, productByName, periodLedger, to);
