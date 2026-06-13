@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-money-text-summary-v66";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-money-text-ledger-aligned-v67";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -681,6 +681,7 @@
         qty: Number(row.qty || 0),
         unit: (productByName[row.product_name] || {}).unit || "",
         amount: Number(row.amount || 0),
+        day: bkkDate(row.debt_at),
         createdAt: row.created_at || null
       }));
     const debtList = unpaidDebts.map(row => ({
@@ -694,6 +695,7 @@
     const repayList = payments.map(row => ({
       customer: row.customer_name,
       debtDate: thaiDate(row.paid_at),
+      day: bkkDate(row.paid_at),
       amount: Number(row.amount || 0)
     }));
     const fuelTests = tests.map(row => ({
@@ -788,6 +790,32 @@
       chartByDay[day].capital += Number(row.costTotal || 0);
       chartByDay[day].profit += Number(row.profit || 0);
     });
+    periodDebtList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
+      chartByDay[day].total -= Number(row.amount || 0);
+    });
+    expenseList.filter(row => row.type !== "stock").forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
+      chartByDay[day].total -= Number(row.amount || 0);
+      chartByDay[day].profit -= Number(row.amount || 0);
+    });
+    repayList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0 };
+      chartByDay[day].total += Number(row.amount || 0);
+    });
+    const alignSeriesTotal = (field, target) => {
+      const current = chartDays.reduce((sum, day) => sum + Number((chartByDay[day] || {})[field] || 0), 0);
+      const diff = Number(target || 0) - current;
+      if (Math.abs(diff) < 0.01 || !chartDays.length) return;
+      const lastActiveDay = chartDays.slice().reverse().find(day => Math.abs(Number((chartByDay[day] || {})[field] || 0)) > 0.01) || chartDays[chartDays.length - 1];
+      chartByDay[lastActiveDay][field] += diff;
+    };
+    alignSeriesTotal("total", netCash);
+    alignSeriesTotal("capital", capitalReturned);
+    alignSeriesTotal("profit", headerNetProfit);
 
     return {
       summary: {
