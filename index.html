@@ -2805,7 +2805,7 @@
                 stockPaid: Number(stockPaidTotal[idx] || 0),
                 walletUsed: Number(walletUsedTotal[idx] || 0),
                 debt: Number(debtTotal[idx] || 0),
-                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
+                net: Number(capitalTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2823,7 +2823,7 @@
                 net: sum.net + row.net
             }), { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, net: 0 });
             const totals = { ...rawTotals, ...(ledgerTotals || {}) };
-            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
+            totals.net = Number(totals.net ?? (Number(totals.capital || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
@@ -2843,7 +2843,7 @@
                                 <th class="px-4 py-3 text-right">จ่ายทุน</th>
                                 <th class="px-4 py-3 text-right">เงินฝากใช้</th>
                                 <th class="px-4 py-3 text-right">ค้างชำระ</th>
-                                <th class="px-4 py-3 text-right">เงินสดจริง</th>
+                                <th class="px-4 py-3 text-right">เงินทุนสุทธิ</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
