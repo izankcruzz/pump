@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-sales-cost-at-sale-v70"></script>
+    <script src="./supabase-adapter.js?v=20260613-month-money-summary-top-v71"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -459,7 +459,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-4" id="dashboard-detail-grid">
                     <div
                         class="bg-white rounded-lg border border-slate-100 shadow-sm flex flex-col h-[520px] overflow-hidden" id="daily-list-card">
                         <div
@@ -1824,6 +1824,7 @@
             const monthlyPanel = document.getElementById('monthly-panel');
             const dailyListCard = document.getElementById('daily-list-card');
             const chartCard = document.getElementById('dash-chart-card');
+            const detailGrid = document.getElementById('dashboard-detail-grid');
             const isRange = currentDashMode === 'range';
             if (monthControls) {
                 monthControls.classList.toggle('hidden', !isMonth);
@@ -1836,8 +1837,13 @@
                     : `bg-white rounded-lg border border-slate-100 shadow-sm flex flex-col h-[520px] overflow-hidden${isRange ? "" : " xl:col-span-2"}`;
             }
             if (chartCard) {
+                if (isMonth && monthlyPanel && chartCard.parentElement !== monthlyPanel.parentElement) {
+                    monthlyPanel.parentElement.insertBefore(chartCard, monthlyPanel);
+                } else if (!isMonth && detailGrid && chartCard.parentElement !== detailGrid) {
+                    detailGrid.appendChild(chartCard);
+                }
                 chartCard.className = isMonth
-                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col xl:col-span-2"
+                    ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col mb-4"
                     : isRange
                     ? "bg-white rounded-lg border border-slate-100 shadow-sm p-4 h-[520px] flex flex-col"
                     : "hidden";
