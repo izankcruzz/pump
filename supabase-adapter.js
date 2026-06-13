@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-date-bound-capital-balance-v63";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-date-bound-list-v64";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";

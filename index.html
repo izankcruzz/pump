@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260613-date-bound-capital-balance-v63"></script>
+    <script src="./supabase-adapter.js?v=20260613-date-bound-list-v64"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2276,6 +2276,109 @@
             if (repaidTotalEl) repaidTotalEl.innerText = `${Math.round(data.repaidTotal || 0).toLocaleString('th-TH')} บาท`;
         }
 
+        function renderDashboardDailyLists(data) {
+            const lists = (data && data.lists) || {};
+            const salesList = Array.isArray(lists.sales) ? lists.sales : [];
+            const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+            const salesCapitalFromItems = salesList.reduce((sum, item) => sum + (Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0))), 0);
+            const salesCapital = Number.isFinite(Number(data && data.summary && data.summary.capitalReturned)) ? Number(data.summary.capitalReturned) : salesCapitalFromItems;
+            const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
+            setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
+            setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
+            setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
+            const salesProfitEl = document.getElementById('list-sales-profit');
+            if (salesProfitEl) {
+                salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
+                salesProfitEl.className = `text-[15px] ${salesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
+            }
+            const salesBody = document.getElementById('list-sales-body');
+            if (salesBody) {
+                if (salesList.length === 0) {
+                    salesBody.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>';
+                } else {
+                    const groupedSalesList = Array.from(salesList.reduce((map, item) => {
+                        const name = String(item.name || '-');
+                        const unit = String(item.unit || 'หน่วย');
+                        const key = `${name}__${unit}`;
+                        const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0 };
+                        old.qty += Number(item.qty) || 0;
+                        old.total += Number(item.total) || 0;
+                        old.profit += Number(item.profit) || 0;
+                        old.costTotal += Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0));
+                        map.set(key, old);
+                        return map;
+                    }, new Map()).values()).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+                    salesBody.innerHTML = '<div class="space-y-2">' + groupedSalesList.map(item => {
+                        const qty = Number(item.qty) || 0;
+                        const total = Number(item.total) || 0;
+                        const profit = Number(item.profit) || 0;
+                        const profitPerUnit = qty > 0 ? profit / qty : 0;
+                        const profitClass = profit < 0 ? 'text-red-600' : 'text-emerald-600';
+                        return `<div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition">
+                            <div class="flex justify-between items-start gap-3">
+                                <div class="flex-1 min-w-0 pr-2">
+                                    <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.name)}</div>
+                                    <div class="text-xs text-slate-400">x${qty.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${escapeHtml(item.unit || 'หน่วย')}</div>
+                                    <div class="text-xs ${profitClass} font-bold mt-1">กำไร/หน่วย ${profitPerUnit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</div>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div class="font-bold text-gray-600 text-sm">${Math.round(total).toLocaleString('th-TH')} บาท</div>
+                                    <div class="text-xs ${profitClass} font-bold mt-1">รวมกำไร ${Math.round(profit).toLocaleString('th-TH')} บาท</div>
+                                </div>
+                            </div>
+                        </div>`;
+                    }).join('') + '</div>';
+                }
+            }
+
+            const repayList = Array.isArray(lists.repayments) ? lists.repayments : [];
+            const repayTotal = repayList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            const repayBodyEl = document.getElementById('list-repay-body');
+            setDashCountAndTotal('list-repay-count', 'list-repay-total', repayList.length, repayTotal);
+            if (repayBodyEl) {
+                repayBodyEl.innerHTML = repayList.length === 0
+                    ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการชำระ</div>'
+                    : '<div class="space-y-2">' + repayList.map(item => `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-teal-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div><div class="text-xs text-slate-400">หนี้วันที่: ${escapeHtml(item.debtDate)}</div></div><div class="font-bold text-teal-600 text-sm">+${Number(item.amount || 0).toLocaleString()} บาท</div></div>`).join('') + '</div>';
+            }
+
+            const expList = Array.isArray(lists.expenses) ? lists.expenses : [];
+            const expensesTotal = expList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            const expensesBody = document.getElementById('list-expenses-body');
+            setDashCountAndTotal('list-expenses-count', 'list-expenses-total', expList.length, expensesTotal);
+            if (expensesBody) {
+                expensesBody.innerHTML = expList.length === 0
+                    ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>'
+                    : '<div class="space-y-2">' + expList.map(item => {
+                        const icon = item.type === 'stock' ? '<i class="fa-solid fa-box text-blue-400 mr-2"></i>' : '<i class="fa-solid fa-bolt text-yellow-400 mr-2"></i>';
+                        return `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${escapeHtml(item.title)}</div><div class="font-bold text-red-500 text-sm">-${Number(item.amount || 0).toLocaleString()} บาท</div></div>`;
+                    }).join('') + '</div>';
+            }
+
+            const debtList = Array.isArray(lists.debts) ? lists.debts : [];
+            const debtTotal = debtList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            const debtBody = document.getElementById('list-debt-body');
+            setDashCountAndTotal('list-debt-count', 'list-debt-total', debtList.length, debtTotal);
+            if (debtBody) {
+                debtBody.innerHTML = debtList.length === 0
+                    ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการค้าง</div>'
+                    : '<div class="space-y-2">' + debtList.map(item => `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-orange-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div><div class="text-xs text-slate-400 truncate">${escapeHtml(item.item)} x${(Number(item.qty) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div></div><div class="font-bold text-orange-500 text-sm">${Number(item.amount || 0).toLocaleString()} บาท</div></div>`).join('') + '</div>';
+            }
+
+            const fuelTestList = Array.isArray(lists.fuelTests) ? lists.fuelTests : [];
+            const fuelTestTotal = fuelTestList.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+            const ftBodyEl = document.getElementById('list-fueltest-body');
+            setDashCountAndTotal('list-fueltest-count', 'list-fueltest-total', fuelTestList.length, fuelTestTotal, 'ลิตร');
+            if (ftBodyEl) {
+                ftBodyEl.innerHTML = fuelTestList.length === 0
+                    ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการทดสอบ</div>'
+                    : '<div class="space-y-2">' + fuelTestList.map(item => {
+                        const isGas = item.type === 'เบนซิน 95';
+                        const tone = isGas ? 'orange' : 'blue';
+                        return `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-${tone}-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-xs font-bold text-${tone}-600 bg-${tone}-50 px-2 py-0.5 rounded inline-block mb-1">${escapeHtml(item.type)}</div><div class="text-xs text-slate-400">${escapeHtml(item.time)}</div></div><div class="font-bold text-teal-600 text-sm">${(Number(item.qty) || 0).toFixed(2)} ลิตร</div></div>`;
+                    }).join('') + '</div>';
+            }
+        }
+
         function loadDashboardWithRange() {
             const btn = document.getElementById('btn-dash-reload');
             const icon = btn.querySelector('i');
@@ -2285,6 +2388,7 @@
             setTextIfExists('dash-profit-balance', "...");
             setTextIfExists('dash-capital-detail', "...");
             setTextIfExists('dash-capital-day-detail', "...");
+            ['list-sales-body', 'list-expenses-body', 'list-debt-body', 'list-repay-body', 'list-fueltest-body'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">กำลังโหลด...</div>'; });
             setMonthlyOilSummaryLoading();
 
             google.script.run.withSuccessHandler(data => {
@@ -2317,6 +2421,9 @@
                 setTextIfExists('dash-capital-day', fmt0(data.summary.capitalReturned));
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
+                const dailyListTitle = document.getElementById('daily-list-title');
+                if (dailyListTitle) dailyListTitle.innerText = `รายการวันที่ ${dateDisplay}`;
+                renderDashboardDailyLists(data);
 
                 document.getElementById('chart-title').innerText = "สถิติช่วงวันที่ที่เลือก";
 
