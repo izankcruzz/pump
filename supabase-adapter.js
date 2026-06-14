@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-13-capital-movement-v82";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-14-monthly-profit-v87";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -664,21 +664,30 @@
     const requestedTo = to;
     const start = `${from}T00:00:00+07:00`;
     const end = `${to}T23:59:59+07:00`;
+    const monthKey = requestedTo.slice(0, 7);
+    const [profitYear, profitMonth] = monthKey.split("-").map(Number);
+    const profitMonthStart = ymd(profitYear, profitMonth, 1);
+    const profitMonthEnd = ymd(profitYear, profitMonth, new Date(profitYear, profitMonth, 0).getDate());
+    const todayForProfit = bkkDate();
+    const profitMonthTo = profitMonthStart <= todayForProfit && todayForProfit <= profitMonthEnd ? todayForProfit : profitMonthEnd;
+    const profitMonthStartTs = `${profitMonthStart}T00:00:00+07:00`;
+    const profitMonthEndTs = `${profitMonthTo}T23:59:59+07:00`;
     let salesQuery = db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void");
     if (period === "day" && from === to && from >= LIVE_CUTOVER_DATE) {
       salesQuery = salesQuery.neq("source", "sheet-import");
     }
 
-    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes] = await Promise.all([
+    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes] = await Promise.all([
       salesQuery,
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
       db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
       db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
       db.from("debts").select("*").in("status", ["unpaid", "partial"]),
       db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
-      db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end)
+      db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end),
+      db.from("sales").select("*").gte("sold_at", profitMonthStartTs).lte("sold_at", profitMonthEndTs).neq("payment_status", "void")
     ]);
-    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes]) if (res.error) throw res.error;
+    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes]) if (res.error) throw res.error;
 
     const mergeById = (primary, fallback) => {
       const map = new Map();
@@ -804,6 +813,15 @@
       note: row.note || "",
       day: bkkDate(row.tx_at)
     }));
+    const saleProfitFromRows = rows => (rows || []).reduce((sum, row) => {
+      const product = productByName[row.product_name] || {};
+      const qty = Number(row.qty || 0);
+      const total = Number(row.total || row.unit_price * qty || 0);
+      const unitCostAtSale = Number(row.unit_cost_at_sale || 0);
+      const cost = unitCostAtSale > 0 ? unitCostAtSale : Number(product.avg_cost || 0);
+      const costTotal = Number(row.cost_total || 0) || (cost * qty);
+      return sum + total - costTotal;
+    }, 0);
 
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
@@ -813,6 +831,7 @@
     const walletUsed = walletList.filter(row => row.type === "use").reduce((sum, row) => sum + row.amount, 0);
     const walletAdjust = walletList.filter(row => row.type === "adjust").reduce((sum, row) => sum + row.amount, 0);
     const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
+    const monthlyProfit = saleProfitFromRows(monthSalesRes.data || []);
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
     const liveStockPaid = livePurchasePaid + expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
@@ -911,6 +930,7 @@
         debt: totalDebt,
         cash: netCash,
         profit,
+        monthlyProfit,
         netProfit: headerNetProfit,
         actualReceived: totalSales + debtRepaid,
         grocery: 0,

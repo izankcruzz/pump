@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260614-profit-sync-v86"></script>
+    <script src="./supabase-adapter.js?v=20260614-monthly-profit-v87"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -1904,6 +1904,8 @@
         }
 
         function getDashboardTableProfit(data) {
+            const monthlyProfit = Number(data && data.summary ? data.summary.monthlyProfit : null);
+            if (Number.isFinite(monthlyProfit)) return monthlyProfit;
             const tableProfit = data && data.chart && data.chart.data && data.chart.data.totals
                 ? data.chart.data.totals.profit
                 : null;
