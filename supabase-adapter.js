@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-14-monthly-profit-v87";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-22-latest-purchase-cost-v89";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -225,9 +225,6 @@
 
       const latestCost = {};
       (purchases || []).forEach(row => {
-        const purchasedAt = new Date(row.purchased_at).getTime();
-        const createdAt = new Date(row.created_at).getTime();
-        if (Number.isFinite(purchasedAt) && Number.isFinite(createdAt) && Math.abs(purchasedAt - createdAt) <= 3600 * 1000) return;
         const cost = Number(row.avg_cost_after || row.unit_cost || 0);
         if (cost <= 0) return;
         if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
