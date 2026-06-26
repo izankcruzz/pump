@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260622-latest-purchase-cost-v89"></script>
+    <script src="./supabase-adapter.js?v=20260626-debt-sale-link-v90"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -3687,7 +3687,7 @@
             btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i> กำลังบันทึก...';
             btn.disabled = true;
             btn.classList.add('opacity-70', 'cursor-not-allowed');
-            google.script.run.withSuccessHandler((res) => { showSuccess(res || "บันทึกค้างจ่ายเรียบร้อย"); document.getElementById('debt-amount').value = ''; document.getElementById('debt-calc-preview').innerText = ''; loadDebtData(); btn.innerHTML = originalText; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).withFailureHandler(e => { alert("❌ เกิดข้อผิดพลาด: " + e.message); btn.innerHTML = originalText; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).saveDebtTransaction({ customerName: customer, productName: product, totalPrice: amount, fillerName: filler, qty: 0 });
+            google.script.run.withSuccessHandler((res) => { showSuccess(res || "บันทึกค้างจ่ายเรียบร้อย"); document.getElementById('debt-amount').value = ''; document.getElementById('debt-calc-preview').innerText = ''; loadDebtData(); loadDashboard(); btn.innerHTML = originalText; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).withFailureHandler(e => { alert("❌ เกิดข้อผิดพลาด: " + e.message); btn.innerHTML = originalText; btn.disabled = false; btn.classList.remove('opacity-70', 'cursor-not-allowed'); }).saveDebtTransaction({ customerName: customer, productName: product, totalPrice: amount, fillerName: filler, qty: 0 });
         }
         function clearDebt(c) { if (confirm(`เคลียร์หนี้คุณ ${c}?`)) google.script.run.withSuccessHandler(() => { showSuccess("เคลียร์แล้ว"); loadDebtData(); }).clearDebtByCustomer(c); }
 

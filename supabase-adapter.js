@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-22-latest-purchase-cost-v89";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-26-debt-sale-link-v90";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -37,6 +37,60 @@
       month: "2-digit",
       day: "2-digit"
     }).format(d);
+  }
+
+  function normalizeDebtCustomer(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function debtCustomerFromSaleNote(note) {
+    const raw = String(note || "").trim();
+    const match = raw.match(/^(?:debt|ค้างจ่าย)\s*:\s*([^|(]+)/i);
+    return normalizeDebtCustomer(match ? match[1] : "");
+  }
+
+  function debtRowsMatchSale(sale, debt) {
+    if (!sale || !debt) return false;
+    if (bkkDate(sale.sold_at) !== bkkDate(debt.debt_at)) return false;
+    const saleProduct = String(sale.product_id || sale.product_name || "");
+    const debtProduct = String(debt.product_id || debt.product_name || "");
+    if (saleProduct !== debtProduct && String(sale.product_name || "") !== String(debt.product_name || "")) return false;
+    const saleAmount = Number(sale.total || Number(sale.unit_price || 0) * Number(sale.qty || 0) || 0);
+    const debtAmount = Number(debt.amount || 0);
+    if (Math.abs(saleAmount - debtAmount) > 1) return false;
+    const saleQty = Number(sale.qty || 0);
+    const debtQty = Number(debt.qty || 0);
+    if (debtQty > 0 && Math.abs(saleQty - debtQty) > 0.02) return false;
+    const noteCustomer = debtCustomerFromSaleNote(sale.note);
+    return !noteCustomer || noteCustomer === normalizeDebtCustomer(debt.customer_name);
+  }
+
+  function filterOrphanDebtSales(sales, debts) {
+    const liveDebts = (debts || []).filter(row => String(row.status || "") !== "void");
+    return (sales || []).filter(row => {
+      if (String(row.payment_status || "") !== "debt") return true;
+      if (String(row.source || "") !== "appsmith-debt") return true;
+      return liveDebts.some(debt => debtRowsMatchSale(row, debt));
+    });
+  }
+
+  async function findDebtSaleForDebt(db, debt) {
+    if (!debt) return null;
+    const day = bkkDate(debt.debt_at || debt.created_at);
+    let query = db
+      .from("sales")
+      .select("*")
+      .gte("sold_at", `${day}T00:00:00+07:00`)
+      .lte("sold_at", `${day}T23:59:59+07:00`)
+      .eq("payment_status", "debt")
+      .eq("source", "appsmith-debt")
+      .order("sold_at", { ascending: false })
+      .limit(50);
+    if (debt.product_id) query = query.eq("product_id", debt.product_id);
+    else query = query.eq("product_name", debt.product_name);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).find(row => debtRowsMatchSale(row, debt)) || null;
   }
 
   function ymd(year, month, day) {
@@ -674,7 +728,7 @@
       salesQuery = salesQuery.neq("source", "sheet-import");
     }
 
-    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes] = await Promise.all([
+    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes, monthDebtsRes] = await Promise.all([
       salesQuery,
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
       db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
@@ -682,9 +736,10 @@
       db.from("debts").select("*").in("status", ["unpaid", "partial"]),
       db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
       db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end),
-      db.from("sales").select("*").gte("sold_at", profitMonthStartTs).lte("sold_at", profitMonthEndTs).neq("payment_status", "void")
+      db.from("sales").select("*").gte("sold_at", profitMonthStartTs).lte("sold_at", profitMonthEndTs).neq("payment_status", "void"),
+      db.from("debts").select("*").gte("debt_at", profitMonthStartTs).lte("debt_at", profitMonthEndTs).neq("status", "void")
     ]);
-    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes]) if (res.error) throw res.error;
+    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes, monthDebtsRes]) if (res.error) throw res.error;
 
     const mergeById = (primary, fallback) => {
       const map = new Map();
@@ -716,10 +771,12 @@
       readCreatedAtFallback("fuel_tests")
     ]);
 
-    const sales = mergeById(salesRes.data || [], salesByCreated);
+    const rawSales = mergeById(salesRes.data || [], salesByCreated);
     const expenses = mergeById(expensesRes.data || [], expensesByCreated);
     const purchases = mergeById(purchasesRes.data || [], purchasesByCreated);
     const debts = mergeById(debtsRes.data || [], debtsByCreated);
+    const sales = filterOrphanDebtSales(rawSales, debts);
+    const monthSales = filterOrphanDebtSales(monthSalesRes.data || [], monthDebtsRes.data || []);
     const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = mergeById(paymentsRes.data || [], paymentsByCreated).filter(row => row.note !== "import paid debt");
     const tests = mergeById(testsRes.data || [], testsByCreated);
@@ -828,7 +885,7 @@
     const walletUsed = walletList.filter(row => row.type === "use").reduce((sum, row) => sum + row.amount, 0);
     const walletAdjust = walletList.filter(row => row.type === "adjust").reduce((sum, row) => sum + row.amount, 0);
     const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
-    const monthlyProfit = saleProfitFromRows(monthSalesRes.data || []);
+    const monthlyProfit = saleProfitFromRows(monthSales);
     const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
     const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
     const liveStockPaid = livePurchasePaid + expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
@@ -1476,9 +1533,16 @@
     if (error) throw error;
     const rows = data || [];
     if (table === "sales") {
+      const { data: dayDebts, error: debtError } = await db
+        .from("debts")
+        .select("*")
+        .gte("debt_at", `${today}T00:00:00+07:00`)
+        .lte("debt_at", `${today}T23:59:59+07:00`)
+        .neq("status", "void");
+      if (debtError) throw debtError;
       const products = await productRows();
       const fuelKeys = new Set(products.filter(isFuelProduct).flatMap(row => [row.id, row.name]).filter(Boolean));
-      return Promise.all(rows.map(async row => {
+      return Promise.all(filterOrphanDebtSales(rows, dayDebts || []).map(async row => {
         const isFuelSale = fuelKeys.has(row.product_id) || fuelKeys.has(row.product_name) || FUEL_NAMES.includes(row.product_name);
         const log = isFuelSale ? await findFuelLogForSale(db, row) : null;
         return {
@@ -1633,6 +1697,27 @@
   async function deleteHistoryRow(type, rowIndex) {
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
+
+    if (table === "debts") {
+      const { data: debt, error: debtError } = await db.from("debts").select("*").eq("id", rowIndex).maybeSingle();
+      if (debtError) throw debtError;
+      const linkedSale = debt ? await findDebtSaleForDebt(db, debt) : null;
+      if (linkedSale && linkedSale.product_id) {
+        const { data: product, error: productError } = await db.from("products").select("stock_qty,is_fuel").eq("id", linkedSale.product_id).maybeSingle();
+        if (productError) throw productError;
+        if (product && !product.is_fuel) {
+          const { error: stockError } = await db
+            .from("products")
+            .update({ stock_qty: Number(product.stock_qty || 0) + Number(linkedSale.qty || 0) })
+            .eq("id", linkedSale.product_id);
+          if (stockError) throw stockError;
+        }
+      }
+      if (linkedSale) {
+        const { error: saleDeleteError } = await db.from("sales").delete().eq("id", linkedSale.id);
+        if (saleDeleteError) throw saleDeleteError;
+      }
+    }
 
     if (table === "sales") {
       const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
