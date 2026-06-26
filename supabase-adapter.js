@@ -1,12 +1,12 @@
-(function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-26-debt-sale-link-v90";
+﻿(function () {
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-26-debt-cash-only-v91";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
   const STORAGE_KEY = "POS_SUPABASE_ANON_KEY";
   const SUPABASE_LOGO_URL = "https://supabase.com/dashboard/img/supabase-logo.svg";
-  const FUEL_CATEGORY = "น้ำมันเชื้อเพลิง";
-  const FUEL_NAMES = ["เบนซิน 95", "ดีเซล"];
+  const FUEL_CATEGORY = "เธเนเธณเธกเธฑเธเน€เธเธทเนเธญเน€เธเธฅเธดเธ";
+  const FUEL_NAMES = ["เน€เธเธเธเธดเธ 95", "เธ”เธตเน€เธเธฅ"];
   const LIVE_CUTOVER_DATE = "2026-06-12";
 
   let client = null;
@@ -43,9 +43,21 @@
     return String(value || "").trim().toLowerCase();
   }
 
+  function isAppDebtSale(row) {
+    if (!row) return false;
+    return String(row.payment_status || "").toLowerCase() === "debt"
+      || String(row.source || "") === "appsmith-debt";
+  }
+
+  function isFuelDebtSale(row, product = null) {
+    if (!isAppDebtSale(row)) return false;
+    if (product && isFuelProduct(product)) return true;
+    return FUEL_NAMES.includes(row.product_name);
+  }
+
   function debtCustomerFromSaleNote(note) {
     const raw = String(note || "").trim();
-    const match = raw.match(/^(?:debt|ค้างจ่าย)\s*:\s*([^|(]+)/i);
+    const match = raw.match(/^(?:debt|เธเนเธฒเธเธเนเธฒเธข)\s*:\s*([^|(]+)/i);
     return normalizeDebtCustomer(match ? match[1] : "");
   }
 
@@ -68,8 +80,7 @@
   function filterOrphanDebtSales(sales, debts) {
     const liveDebts = (debts || []).filter(row => String(row.status || "") !== "void");
     return (sales || []).filter(row => {
-      if (String(row.payment_status || "") !== "debt") return true;
-      if (String(row.source || "") !== "appsmith-debt") return true;
+      if (!isAppDebtSale(row)) return true;
       return liveDebts.some(debt => debtRowsMatchSale(row, debt));
     });
   }
@@ -130,10 +141,10 @@
   function findFuelRows(rows) {
     const fuelRows = (rows || []).filter(isFuelProduct);
     const gas95 = fuelRows.find(row => String(row.name || "").includes("95"))
-      || fuelRows.find(row => /gas|benz|เบนซิน|แก๊ส/i.test(String(row.name || "")))
+      || fuelRows.find(row => /gas|benz|เน€เธเธเธเธดเธ|เนเธเนเธช/i.test(String(row.name || "")))
       || fuelRows[0]
       || null;
-    const diesel = fuelRows.find(row => row.id !== (gas95 && gas95.id) && /diesel|ดีเซล/i.test(String(row.name || "")))
+    const diesel = fuelRows.find(row => row.id !== (gas95 && gas95.id) && /diesel|เธ”เธตเน€เธเธฅ/i.test(String(row.name || "")))
       || fuelRows.find(row => row.id !== (gas95 && gas95.id))
       || null;
     return { gas95, diesel };
@@ -145,10 +156,10 @@
       id: row.id,
       name: row.name,
       price: moneyNumber(row.sale_price),
-      category: fuel ? FUEL_CATEGORY : (row.category || "สินค้า"),
+      category: fuel ? FUEL_CATEGORY : (row.category || "เธชเธดเธเธเนเธฒ"),
       img: row.image_url || "https://placehold.co/400x400?text=No+Img",
       stock: moneyNumber(row.stock_qty),
-      unit: row.unit || (fuel ? "ลิตร" : "ชิ้น"),
+      unit: row.unit || (fuel ? "เธฅเธดเธ•เธฃ" : "เธเธดเนเธ"),
       soldRank: soldRankMap && soldRankMap[row.name] ? soldRankMap[row.name] : 0,
       cost: moneyNumber(row.avg_cost)
     };
@@ -161,7 +172,7 @@
     if (error) throw error;
     if (!data.session) {
       showLogin();
-      throw new Error("กรุณา login");
+      throw new Error("เธเธฃเธธเธ“เธฒ login");
     }
     return client;
   }
@@ -198,8 +209,8 @@
             <img src="${SUPABASE_LOGO_URL}" alt="Supabase" class="w-8 h-8 object-contain">
           </div>
           <div>
-            <div class="font-black text-slate-800 text-xl">เชื่อม Supabase</div>
-            <div class="text-xs text-slate-400">ใช้ backend ใหม่แทน Google Sheet</div>
+            <div class="font-black text-slate-800 text-xl">เน€เธเธทเนเธญเธก Supabase</div>
+            <div class="text-xs text-slate-400">เนเธเน backend เนเธซเธกเนเนเธ—เธ Google Sheet</div>
           </div>
         </div>
         <label class="block text-sm font-bold text-slate-600">Supabase URL</label>
@@ -210,7 +221,7 @@
         <input id="sb-email" type="email" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400">
         <label class="block text-sm font-bold text-slate-600">Password</label>
         <input id="sb-password" type="password" class="w-full rounded-2xl border border-slate-200 p-3 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400">
-        <button id="sb-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl p-3 font-black">เข้าสู่ระบบ</button>
+        <button id="sb-login-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl p-3 font-black">เน€เธเนเธฒเธชเธนเนเธฃเธฐเธเธ</button>
         <div id="sb-login-status" class="text-sm text-slate-500"></div>
       </div>`;
     document.body.appendChild(wrap);
@@ -226,13 +237,13 @@
       const email = document.getElementById("sb-email").value.trim();
       const password = document.getElementById("sb-password").value;
       if (!url || !key || !email || !password) {
-        setLoginStatus("กรอกให้ครบ", true);
+        setLoginStatus("เธเธฃเธญเธเนเธซเนเธเธฃเธ", true);
         return;
       }
       localStorage.setItem(STORAGE_URL, url);
       localStorage.setItem(STORAGE_KEY, key);
       client = window.supabase.createClient(url, key);
-      setLoginStatus("กำลัง login...");
+      setLoginStatus("เธเธณเธฅเธฑเธ login...");
       const { error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
       hideLogin();
@@ -302,11 +313,12 @@
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await db
         .from("sales")
-        .select("product_name,qty,payment_status")
+        .select("product_name,qty,payment_status,source")
         .neq("payment_status", "void")
         .range(from, from + pageSize - 1);
       if (error) throw error;
       (data || []).forEach(row => {
+        if (isFuelDebtSale(row)) return;
         const name = row.product_name;
         if (!name) return;
         totals[name] = (totals[name] || 0) + Number(row.qty || 0);
@@ -322,7 +334,7 @@
     const items = rows.map(row => mapProduct(row, ranks));
     const fuelItems = items.filter(item => item.category === FUEL_CATEGORY);
     const gas95 = fuelItems.find(item => String(item.name || "").includes("95"));
-    const diesel = fuelItems.find(item => item !== gas95 && /diesel|ดีเซล/i.test(String(item.name || "")));
+    const diesel = fuelItems.find(item => item !== gas95 && /diesel|เธ”เธตเน€เธเธฅ/i.test(String(item.name || "")));
     const orderedFuels = [gas95, diesel].filter(Boolean);
     fuelItems.forEach(item => {
       if (!orderedFuels.includes(item)) orderedFuels.push(item);
@@ -353,15 +365,15 @@
     const { error } = await db.rpc("app_add_product", {
       p_name: form.name,
       p_sale_price: Number(form.salePrice || 0),
-      p_category: form.category || "สินค้า",
-      p_unit: form.unit || "ชิ้น",
+      p_category: form.category || "เธชเธดเธเธเนเธฒ",
+      p_unit: form.unit || "เธเธดเนเธ",
       p_image_url: form.imageUrl || null,
       p_initial_stock: Number(form.initialStock || 0),
       p_initial_cost: Number(form.initialCost || 0),
       p_is_fuel: form.category === FUEL_CATEGORY || FUEL_NAMES.includes(form.name)
     });
     if (error) throw error;
-    return "เพิ่มสินค้าแล้ว";
+    return "เน€เธเธดเนเธกเธชเธดเธเธเนเธฒเนเธฅเนเธง";
   }
 
   async function updateProductPrices(form) {
@@ -374,7 +386,7 @@
       });
       if (error) throw error;
     }
-    return `ปรับราคาแล้ว (${updates.length} รายการ)`;
+    return `เธเธฃเธฑเธเธฃเธฒเธเธฒเนเธฅเนเธง (${updates.length} เธฃเธฒเธขเธเธฒเธฃ)`;
   }
 
   async function saveOrder(orderItems) {
@@ -430,32 +442,32 @@
     ]);
 
     const lastData = {
-      "ดีเซล": { meter: 0, digi: 0 },
-      "เบนซิน 95": { meter: 0, digi: 0 }
+      "เธ”เธตเน€เธเธฅ": { meter: 0, digi: 0 },
+      "เน€เธเธเธเธดเธ 95": { meter: 0, digi: 0 }
     };
     if (gasLog) {
-      lastData["เบนซิน 95"].meter = Number(gasLog.meter_end || 0);
-      lastData["เบนซิน 95"].digi = Number(gasLog.meter_end || 0);
+      lastData["เน€เธเธเธเธดเธ 95"].meter = Number(gasLog.meter_end || 0);
+      lastData["เน€เธเธเธเธดเธ 95"].digi = Number(gasLog.meter_end || 0);
     }
     if (dieselLog) {
-      lastData["ดีเซล"].meter = Number(dieselLog.meter_end || 0);
-      lastData["ดีเซล"].digi = Number(dieselLog.meter_end || 0);
+      lastData["เธ”เธตเน€เธเธฅ"].meter = Number(dieselLog.meter_end || 0);
+      lastData["เธ”เธตเน€เธเธฅ"].digi = Number(dieselLog.meter_end || 0);
     }
 
     const today = bkkDate();
-    const { data: debts, error: debtError } = await db.from("debts").select("*").gte("debt_at", `${today}T00:00:00+07:00`).lte("debt_at", `${today}T23:59:59+07:00`);
+    const { data: debts, error: debtError } = await db.from("debts").select("*").gte("debt_at", `${today}T00:00:00+07:00`).lte("debt_at", `${today}T23:59:59+07:00`).neq("status", "void");
     if (debtError) throw debtError;
-    const todayDebt = { "ดีเซล": 0, "เบนซิน 95": 0 };
+    const todayDebt = { "เธ”เธตเน€เธเธฅ": 0, "เน€เธเธเธเธดเธ 95": 0 };
     (debts || []).forEach(row => {
-      if ((diesel && row.product_id === diesel.id) || row.product_name === (diesel && diesel.name)) todayDebt["ดีเซล"] += Number(row.qty || 0);
-      if ((gas95 && row.product_id === gas95.id) || row.product_name === (gas95 && gas95.name)) todayDebt["เบนซิน 95"] += Number(row.qty || 0);
+      if ((diesel && row.product_id === diesel.id) || row.product_name === (diesel && diesel.name)) todayDebt["เธ”เธตเน€เธเธฅ"] += Number(row.amount || 0);
+      if ((gas95 && row.product_id === gas95.id) || row.product_name === (gas95 && gas95.name)) todayDebt["เน€เธเธเธเธดเธ 95"] += Number(row.amount || 0);
     });
 
     return {
       lastData,
       currentPrices: {
-        "ดีเซล": moneyNumber(diesel && diesel.sale_price),
-        "เบนซิน 95": moneyNumber(gas95 && gas95.sale_price)
+        "เธ”เธตเน€เธเธฅ": moneyNumber(diesel && diesel.sale_price),
+        "เน€เธเธเธเธดเธ 95": moneyNumber(gas95 && gas95.sale_price)
       },
       todayDebt
     };
@@ -504,7 +516,7 @@
         const { error } = await db.from("expenses").insert({
           title: item.productName,
           amount: Number(item.totalPrice || item.pricePerUnit || 0),
-          note: "จากจัดการสต็อก",
+          note: "เธเธฒเธเธเธฑเธ”เธเธฒเธฃเธชเธ•เนเธญเธ",
           expense_type: item.type === "capitalExpense" ? "capital" : "expense"
         });
         if (error) throw error;
@@ -512,14 +524,14 @@
           await insertWalletEntry({
             tx_type: "use",
             amount: Number(item.totalPrice || item.pricePerUnit || 0),
-            note: item.productName || "ใช้เงินฝากทุน",
+            note: item.productName || "เนเธเนเน€เธเธดเธเธเธฒเธเธ—เธธเธ",
             ref_type: "expense"
           });
         }
         continue;
       }
       const product = byName[item.productName];
-      if (!product) throw new Error(`ไม่พบสินค้า: ${item.productName}`);
+      if (!product) throw new Error(`เนเธกเนเธเธเธชเธดเธเธเนเธฒ: ${item.productName}`);
       const purchase = {
         product_id: product.id,
         qty: Number(item.qty || 0),
@@ -534,27 +546,27 @@
         await insertWalletEntry({
           tx_type: "use",
           amount: Number(item.totalPrice || 0),
-          note: `ใช้เงินฝากซื้อ: ${item.productName}`,
+          note: `เนเธเนเน€เธเธดเธเธเธฒเธเธเธทเนเธญ: ${item.productName}`,
           ref_type: "purchase",
           ref_id: inserted.inserted_id || null
         });
       }
     }
-    return "บันทึกรับสินค้าแล้ว";
+    return "เธเธฑเธเธ—เธถเธเธฃเธฑเธเธชเธดเธเธเนเธฒเนเธฅเนเธง";
   }
 
   async function saveCapitalWalletEntry(form) {
     const db = await ensureReady();
     const amount = Number(form.amount || 0);
     const txType = ["deposit", "adjust"].includes(form.type) ? form.type : "deposit";
-    if (amount <= 0) throw new Error("จำนวนเงินต้องมากกว่า 0");
+    if (amount <= 0) throw new Error("เธเธณเธเธงเธเน€เธเธดเธเธ•เนเธญเธเธกเธฒเธเธเธงเนเธฒ 0");
     const { error } = await db.from("capital_wallet_entries").insert({
       tx_type: txType,
       amount,
-      note: form.note || (txType === "deposit" ? "ฝากเงินทุนล่วงหน้า" : "ปรับยอดเงินฝากทุน")
+      note: form.note || (txType === "deposit" ? "เธเธฒเธเน€เธเธดเธเธ—เธธเธเธฅเนเธงเธเธซเธเนเธฒ" : "เธเธฃเธฑเธเธขเธญเธ”เน€เธเธดเธเธเธฒเธเธ—เธธเธ")
     });
     if (error) throw error;
-    return txType === "deposit" ? "บันทึกฝากเงินทุนแล้ว" : "ปรับยอดเงินฝากทุนแล้ว";
+    return txType === "deposit" ? "เธเธฑเธเธ—เธถเธเธเธฒเธเน€เธเธดเธเธ—เธธเธเนเธฅเนเธง" : "เธเธฃเธฑเธเธขเธญเธ”เน€เธเธดเธเธเธฒเธเธ—เธธเธเนเธฅเนเธง";
   }
 
   async function saveCapitalBalanceReset(form) {
@@ -576,7 +588,7 @@
       source: "manual-reset"
     });
     if (error) throw error;
-    return "ตั้งยอดเงินทุนคงเหลือแล้ว";
+    return "เธ•เธฑเนเธเธขเธญเธ”เน€เธเธดเธเธ—เธธเธเธเธเน€เธซเธฅเธทเธญเนเธฅเนเธง";
   }
 
   async function saveCapitalMovement(form) {
@@ -600,7 +612,7 @@
       source: isOut ? "manual-withdraw" : "manual-deposit"
     });
     if (error) throw error;
-    return isOut ? "บันทึกนำทุนออกแล้ว" : "บันทึกนำทุนเข้าแล้ว";
+    return isOut ? "เธเธฑเธเธ—เธถเธเธเธณเธ—เธธเธเธญเธญเธเนเธฅเนเธง" : "เธเธฑเธเธ—เธถเธเธเธณเธ—เธธเธเน€เธเนเธฒเนเธฅเนเธง";
   }
 
   async function getDebtPageData() {
@@ -635,7 +647,7 @@
     const db = await ensureReady();
     const rows = await productRows();
     const product = rows.find(row => row.name === form.productName);
-    if (!product) throw new Error(`ไม่พบสินค้า: ${form.productName}`);
+    if (!product) throw new Error(`เนเธกเนเธเธเธชเธดเธเธเนเธฒ: ${form.productName}`);
     const { error } = await db.rpc("app_create_debt", {
       p_customer_name: form.customerName,
       p_product_id: product.id,
@@ -645,7 +657,7 @@
       p_note: null
     });
     if (error) throw error;
-    return "บันทึกหนี้แล้ว";
+    return "เธเธฑเธเธ—เธถเธเธซเธเธตเนเนเธฅเนเธง";
   }
 
   async function clearDebtByCustomer(customerName) {
@@ -656,7 +668,7 @@
       p_note: "clear"
     });
     if (error) throw error;
-    return "เคลียร์แล้ว";
+    return "เน€เธเธฅเธตเธขเธฃเนเนเธฅเนเธง";
   }
 
   async function unpaidAmountFor(customerName) {
@@ -674,7 +686,7 @@
       p_note: form.note || null
     });
     if (error) throw error;
-    return "รับชำระแล้ว";
+    return "เธฃเธฑเธเธเธณเธฃเธฐเนเธฅเนเธง";
   }
 
   async function saveGeneralExpense(form) {
@@ -686,7 +698,7 @@
       expense_type: form.type === "bank" ? "bank" : "expense"
     });
     if (error) throw error;
-    return "บันทึกแล้ว";
+    return "เธเธฑเธเธ—เธถเธเนเธฅเนเธง";
   }
 
   async function getDashboardData(period = "day", customDate = null, dateRange = null) {
@@ -775,8 +787,9 @@
     const expenses = mergeById(expensesRes.data || [], expensesByCreated);
     const purchases = mergeById(purchasesRes.data || [], purchasesByCreated);
     const debts = mergeById(debtsRes.data || [], debtsByCreated);
-    const sales = filterOrphanDebtSales(rawSales, debts);
-    const monthSales = filterOrphanDebtSales(monthSalesRes.data || [], monthDebtsRes.data || []);
+    const salesWithDebtRows = filterOrphanDebtSales(rawSales, debts);
+    const sales = salesWithDebtRows.filter(row => !isFuelDebtSale(row, productByName[row.product_name] || null));
+    const monthSales = filterOrphanDebtSales(monthSalesRes.data || [], monthDebtsRes.data || []).filter(row => !isFuelDebtSale(row, productByName[row.product_name] || null));
     const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = mergeById(paymentsRes.data || [], paymentsByCreated).filter(row => row.note !== "import paid debt");
     const tests = mergeById(testsRes.data || [], testsByCreated);
@@ -822,7 +835,7 @@
       day: bkkDate(row.spent_at)
     }));
     const purchaseList = purchases.map(row => ({
-      title: `ซื้อ: ${row.product_name}`,
+      title: `เธเธทเนเธญ: ${row.product_name}`,
       name: row.product_name,
       amount: Number(row.total || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0),
       qty: Number(row.qty || 0),
@@ -830,9 +843,7 @@
       type: "stock",
       day: bkkDate(row.purchased_at)
     }));
-    const periodDebtList = debts
-      .filter(row => ["unpaid", "partial"].includes(String(row.status || "")))
-      .map(row => ({
+    const periodDebtList = debts.map(row => ({
         customer: row.customer_name,
         item: row.product_name,
         qty: Number(row.qty || 0),
@@ -949,33 +960,39 @@
       chartDays.push(day);
       if (chartDays.length > 370) break;
     }
-    const chartByDay = Object.fromEntries(chartDays.map(day => [day, { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 }]));
+    const emptyChartDay = () => ({ total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, repaid: 0 });
+    const chartByDay = Object.fromEntries(chartDays.map(day => [day, emptyChartDay()]));
     salesList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].total += Number(row.total || 0);
       chartByDay[day].capital += Number(row.costTotal || 0);
       chartByDay[day].profit += Number(row.profit || 0);
     });
     purchaseList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].stockPaid += Number(row.amount || 0);
     });
     expenseList.filter(row => row.type === "stock").forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].stockPaid += Number(row.amount || 0);
     });
     periodDebtList.forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].debt += Number(row.amount || 0);
     });
     walletList.filter(row => row.type === "use").forEach(row => {
       const day = row.day || bkkDate();
-      if (!chartByDay[day]) chartByDay[day] = { total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0 };
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].walletUsed += Number(row.amount || 0);
+    });
+    repayList.forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
+      chartByDay[day].repaid += Number(row.amount || 0);
     });
     return {
       summary: {
@@ -986,7 +1003,7 @@
         profit,
         monthlyProfit,
         netProfit: headerNetProfit,
-        actualReceived: totalSales + debtRepaid,
+        actualReceived: totalSales - totalDebt + debtRepaid,
         grocery: 0,
         stockPaid,
         debtRepaid,
@@ -1011,8 +1028,8 @@
         generalExpenses
       },
       prices: {
-        "เบนซิน 95": Number((productByName["เบนซิน 95"] || {}).sale_price || 0),
-        "ดีเซล": Number((productByName["ดีเซล"] || {}).sale_price || 0)
+        "เน€เธเธเธเธดเธ 95": Number((productByName["เน€เธเธเธเธดเธ 95"] || {}).sale_price || 0),
+        "เธ”เธตเน€เธเธฅ": Number((productByName["เธ”เธตเน€เธเธฅ"] || {}).sale_price || 0)
       },
       lists: {
         sales: salesList,
@@ -1032,6 +1049,7 @@
           stockPaid: chartDays.map(day => chartByDay[day].stockPaid),
           walletUsed: chartDays.map(day => chartByDay[day].walletUsed),
           debt: chartDays.map(day => chartByDay[day].debt),
+          repaid: chartDays.map(day => chartByDay[day].repaid),
           sales: chartDays.map(day => chartByDay[day].total),
           cash: chartDays.map(day => chartByDay[day].capital),
           totals: {
@@ -1040,7 +1058,9 @@
             profit,
             stockPaid,
             walletUsed,
-            debt: totalDebt
+            debt: totalDebt,
+            repaid: debtRepaid,
+            net: netCash
           }
         }
       },
@@ -1362,6 +1382,7 @@
     (salesRes.data || []).forEach(row => {
       const day = bkkDate(row.sold_at);
       const product = productByName[row.product_name] || {};
+      if (isFuelDebtSale(row, product)) return;
       const qty = Number(row.qty || 0);
       const total = Number(row.total || row.unit_price * qty || 0);
       const unitCostAtSale = Number(row.unit_cost_at_sale || 0);
@@ -1401,12 +1422,12 @@
     const byName = Object.fromEntries(rows.map(row => [row.name, row]));
     return {
       prices: {
-        "เบนซิน 95": Number((byName["เบนซิน 95"] || {}).sale_price || 0),
-        "ดีเซล": Number((byName["ดีเซล"] || {}).sale_price || 0)
+        "เน€เธเธเธเธดเธ 95": Number((byName["เน€เธเธเธเธดเธ 95"] || {}).sale_price || 0),
+        "เธ”เธตเน€เธเธฅ": Number((byName["เธ”เธตเน€เธเธฅ"] || {}).sale_price || 0)
       },
       costs: {
-        "เบนซิน 95": Number((byName["เบนซิน 95"] || {}).avg_cost || 0),
-        "ดีเซล": Number((byName["ดีเซล"] || {}).avg_cost || 0)
+        "เน€เธเธเธเธดเธ 95": Number((byName["เน€เธเธเธเธดเธ 95"] || {}).avg_cost || 0),
+        "เธ”เธตเน€เธเธฅ": Number((byName["เธ”เธตเน€เธเธฅ"] || {}).avg_cost || 0)
       }
     };
   }
@@ -1415,8 +1436,8 @@
     const rows = await productRows();
     const updates = [];
     const byName = Object.fromEntries(rows.map(row => [row.name, row]));
-    if (byName["เบนซิน 95"] && form.new_gas95) updates.push({ id: byName["เบนซิน 95"].id, newPrice: Number(form.new_gas95) });
-    if (byName["ดีเซล"] && form.new_diesel) updates.push({ id: byName["ดีเซล"].id, newPrice: Number(form.new_diesel) });
+    if (byName["เน€เธเธเธเธดเธ 95"] && form.new_gas95) updates.push({ id: byName["เน€เธเธเธเธดเธ 95"].id, newPrice: Number(form.new_gas95) });
+    if (byName["เธ”เธตเน€เธเธฅ"] && form.new_diesel) updates.push({ id: byName["เธ”เธตเน€เธเธฅ"].id, newPrice: Number(form.new_diesel) });
     return updateProductPrices({ updates });
   }
 
@@ -1424,7 +1445,7 @@
     const db = await ensureReady();
     const rows = await productRows();
     const product = rows.find(row => row.name === form.fuelType);
-    if (!product) throw new Error("ไม่พบน้ำมัน");
+    if (!product) throw new Error("เนเธกเนเธเธเธเนเธณเธกเธฑเธ");
     const { error } = await db.rpc("app_save_fuel_test", {
       p_product_id: product.id,
       p_meter_start: Number(form.meterStart || 0),
@@ -1432,7 +1453,7 @@
       p_note: form.note || null
     });
     if (error) throw error;
-    return "บันทึกทดสอบน้ำมันแล้ว";
+    return "เธเธฑเธเธ—เธถเธเธ—เธ”เธชเธญเธเธเนเธณเธกเธฑเธเนเธฅเนเธง";
   }
 
   async function getFuelTestHistory() {
@@ -1542,7 +1563,7 @@
       if (debtError) throw debtError;
       const products = await productRows();
       const fuelKeys = new Set(products.filter(isFuelProduct).flatMap(row => [row.id, row.name]).filter(Boolean));
-      return Promise.all(filterOrphanDebtSales(rows, dayDebts || []).map(async row => {
+      return Promise.all(filterOrphanDebtSales(rows, dayDebts || []).filter(row => !isFuelDebtSale(row)).map(async row => {
         const isFuelSale = fuelKeys.has(row.product_id) || fuelKeys.has(row.product_name) || FUEL_NAMES.includes(row.product_name);
         const log = isFuelSale ? await findFuelLogForSale(db, row) : null;
         return {
@@ -1595,11 +1616,11 @@
     if (table === "sales") {
       const { data: sale, error: saleError } = await db.from("sales").select("*").eq("id", rowIndex).maybeSingle();
       if (saleError) throw saleError;
-      if (!sale) throw new Error("ไม่พบรายการขาย");
+      if (!sale) throw new Error("เนเธกเนเธเธเธฃเธฒเธขเธเธฒเธฃเธเธฒเธข");
       const oldQty = Number(sale.qty || 0);
       const nextQty = form.isFuel ? meterQty(form.start_meter, form.end_meter) : positiveNumber(form.qty);
       const nextPrice = positiveNumber(form.price || sale.unit_price);
-      if (nextQty <= 0) throw new Error("จำนวนต้องมากกว่า 0");
+      if (nextQty <= 0) throw new Error("เธเธณเธเธงเธเธ•เนเธญเธเธกเธฒเธเธเธงเนเธฒ 0");
       const fuelLog = form.isFuel ? await findFuelLogForSale(db, sale) : null;
       const oldMeterQty = fuelLog ? Number(fuelLog.qty || 0) : oldQty;
       const { error } = await db
@@ -1625,7 +1646,7 @@
         if (logError) throw logError;
       }
       if (sale.payment_status !== "void") await adjustStock(sale.product_id, oldMeterQty - nextQty);
-      return "แก้ไขรายการขายแล้ว";
+      return "เนเธเนเนเธเธฃเธฒเธขเธเธฒเธฃเธเธฒเธขเนเธฅเนเธง";
     }
 
     if (table === "expenses") {
@@ -1634,7 +1655,7 @@
         .update({ title: form.title || "", amount: positiveNumber(form.amount), note: form.note || null })
         .eq("id", rowIndex);
       if (error) throw error;
-      return "แก้ไขรายจ่ายแล้ว";
+      return "เนเธเนเนเธเธฃเธฒเธขเธเนเธฒเธขเนเธฅเนเธง";
     }
 
     if (table === "debts") {
@@ -1649,25 +1670,25 @@
         })
         .eq("id", rowIndex);
       if (error) throw error;
-      return "แก้ไขค้างชำระแล้ว";
+      return "เนเธเนเนเธเธเนเธฒเธเธเธณเธฃเธฐเนเธฅเนเธง";
     }
 
     if (table === "purchases") {
       const { data: purchase, error: purchaseError } = await db.from("purchases").select("*").eq("id", rowIndex).maybeSingle();
       if (purchaseError) throw purchaseError;
-      if (!purchase) throw new Error("ไม่พบรายการรับเข้า");
+      if (!purchase) throw new Error("เนเธกเนเธเธเธฃเธฒเธขเธเธฒเธฃเธฃเธฑเธเน€เธเนเธฒ");
       const oldQty = Number(purchase.qty || 0);
       const nextQty = positiveNumber(form.qty);
       const nextTotal = positiveNumber(form.total);
       const nextCost = nextQty > 0 ? nextTotal / nextQty : Number(purchase.unit_cost || 0);
-      if (nextQty <= 0) throw new Error("จำนวนต้องมากกว่า 0");
+      if (nextQty <= 0) throw new Error("เธเธณเธเธงเธเธ•เนเธญเธเธกเธฒเธเธเธงเนเธฒ 0");
       const { error } = await db
         .from("purchases")
         .update({ qty: nextQty, unit_cost: nextCost, avg_cost_after: nextCost })
         .eq("id", rowIndex);
       if (error) throw error;
       await adjustStock(purchase.product_id, nextQty - oldQty);
-      return "แก้ไขรายการรับเข้าแล้ว";
+      return "เนเธเนเนเธเธฃเธฒเธขเธเธฒเธฃเธฃเธฑเธเน€เธเนเธฒเนเธฅเนเธง";
     }
 
     if (table === "fuel_tests") {
@@ -1689,9 +1710,9 @@
           .eq("id", fuelLog.id);
         if (logError) throw logError;
       }
-      return "แก้ไขทดสอบน้ำมันแล้ว";
+      return "เนเธเนเนเธเธ—เธ”เธชเธญเธเธเนเธณเธกเธฑเธเนเธฅเนเธง";
     }
-    return "ยังไม่รองรับแก้ไขในโหมด Supabase";
+    return "เธขเธฑเธเนเธกเนเธฃเธญเธเธฃเธฑเธเนเธเนเนเธเนเธเนเธซเธกเธ” Supabase";
   }
 
   async function deleteHistoryRow(type, rowIndex) {
@@ -1769,15 +1790,15 @@
 
     const { error } = await db.from(table).delete().eq("id", rowIndex);
     if (error) throw error;
-    return "ลบแล้ว";
+    return "เธฅเธเนเธฅเนเธง";
   }
 
   async function recalculateFuelStockFromSheets() {
-    return "โหมด Supabase ใช้ stock_qty ในตาราง products";
+    return "เนเธซเธกเธ” Supabase เนเธเน stock_qty เนเธเธ•เธฒเธฃเธฒเธ products";
   }
 
   async function DailyReportToLineFlex() {
-    return "ยังไม่ได้ตั้ง LINE ในโหมด Supabase";
+    return "เธขเธฑเธเนเธกเนเนเธ”เนเธ•เธฑเนเธ LINE เนเธเนเธซเธกเธ” Supabase";
   }
 
   const api = {
@@ -1818,7 +1839,7 @@
         return (...args) => {
           Promise.resolve()
             .then(() => {
-              if (!api[prop]) throw new Error(`ยังไม่รองรับฟังก์ชัน ${String(prop)}`);
+              if (!api[prop]) throw new Error(`เธขเธฑเธเนเธกเนเธฃเธญเธเธฃเธฑเธเธเธฑเธเธเนเธเธฑเธ ${String(prop)}`);
               return api[prop](...args);
             })
             .then(result => {
