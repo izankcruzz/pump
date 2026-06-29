@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-cash-capital-expense-v95";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-net-cash-wallet-display-v96";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -960,7 +960,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
-    const netCash = totalSales + walletUsed - stockPaid - debtCashImpact - generalExpenses + debtRepaid;
+    const netCash = totalSales - stockPaid - debtCashImpact - generalExpenses + debtRepaid;
     const sumRowsByName = items => {
       const map = new Map();
       (items || []).forEach(item => {
