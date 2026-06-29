@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-26-debt-cash-only-v92";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -829,8 +829,10 @@
     });
 
     const expenseList = expenses.map(row => ({
+      id: row.id,
       title: row.title,
       amount: Number(row.amount || 0),
+      note: row.note || "",
       type: row.expense_type === "capital" ? "stock" : "general",
       day: bkkDate(row.spent_at)
     }));

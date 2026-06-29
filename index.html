@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260626-debt-cash-only-v92"></script>
+    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -1669,6 +1669,7 @@
         let stockProducts = [], stockList = [], debtProducts = [], unpaidDebts = [], debtPaymentGroups = [], currentDebtPayment = null, salesChart = null;
         let currentDashMode = 'day';
         let currentStockMode = 'receive';
+        let dashboardExpenseEditCache = [];
         const FUEL_METER_ROLLOVER = 10000;
 
         function clearAutofilledSearchValue(input) {
@@ -2458,12 +2459,13 @@
             const expensesTotal = expList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
             const expensesBody = document.getElementById('list-expenses-body');
             setDashCountAndTotal('list-expenses-count', 'list-expenses-total', expList.length, expensesTotal);
+            dashboardExpenseEditCache = expList;
             if (expensesBody) {
                 expensesBody.innerHTML = expList.length === 0
                     ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>'
-                    : '<div class="space-y-2">' + expList.map(item => {
+                    : '<div class="space-y-2">' + expList.map((item, editIndex) => {
                         const icon = item.type === 'stock' ? '<i class="fa-solid fa-box text-blue-400 mr-2"></i>' : '<i class="fa-solid fa-bolt text-yellow-400 mr-2"></i>';
-                        return `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${escapeHtml(item.title)}</div><div class="font-bold text-red-500 text-sm">-${Number(item.amount || 0).toLocaleString()} บาท</div></div>`;
+                        return `<div class="flex justify-between items-center gap-3 bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${escapeHtml(item.title)}</div><div class="text-right shrink-0"><div class="font-bold text-red-500 text-sm">-${Number(item.amount || 0).toLocaleString()} บาท</div><button onclick="editExpenseSummaryItem(${editIndex})" class="text-xs bg-slate-50 px-2 py-1 rounded mt-1 text-slate-500 hover:bg-indigo-500 hover:text-white transition">แก้ไข</button></div></div>`;
                     }).join('') + '</div>';
             }
 
@@ -2717,9 +2719,10 @@
                 const expList = data.lists.expenses;
                 const expensesTotal = expList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
                 setDashCountAndTotal('list-expenses-count', 'list-expenses-total', expList.length, expensesTotal);
+                dashboardExpenseEditCache = expList;
                 if (expList.length === 0) { document.getElementById('list-expenses-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>'; } else {
                     let html = '<div class="space-y-2">';
-                    expList.forEach(item => { let icon = item.type === 'stock' ? '<i class="fa-solid fa-box text-blue-400 mr-2"></i>' : '<i class="fa-solid fa-bolt text-yellow-400 mr-2"></i>'; html += `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${item.title}</div><div class="font-bold text-red-500 text-sm">-${item.amount.toLocaleString()} บาท</div></div>`; });
+                    expList.forEach((item, editIndex) => { let icon = item.type === 'stock' ? '<i class="fa-solid fa-box text-blue-400 mr-2"></i>' : '<i class="fa-solid fa-bolt text-yellow-400 mr-2"></i>'; html += `<div class="flex justify-between items-center gap-3 bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${escapeHtml(item.title)}</div><div class="text-right shrink-0"><div class="font-bold text-red-500 text-sm">-${Number(item.amount || 0).toLocaleString()} บาท</div><button onclick="editExpenseSummaryItem(${editIndex})" class="text-xs bg-slate-50 px-2 py-1 rounded mt-1 text-slate-500 hover:bg-indigo-500 hover:text-white transition">แก้ไข</button></div></div>`; });
                     html += '</div>';
                     document.getElementById('list-expenses-body').innerHTML = html;
                 }
@@ -3907,6 +3910,17 @@
             const rowIndex = item.rowIndex;
             const data = item.data;
             prepareEdit(rowIndex, data); // Reuse old logic but data comes from cache
+        }
+
+        function editExpenseSummaryItem(cacheIndex) {
+            const item = dashboardExpenseEditCache[cacheIndex];
+            if (!item || !item.id) return alert('ไม่พบรหัสรายการรายจ่าย');
+            currentEditType = 'expense';
+            historyDataCache = [{
+                rowIndex: item.id,
+                data: ['', item.title || '', Number(item.amount || 0), Number(item.amount || 0), item.note || '']
+            }];
+            prepareEditFromCache(0);
         }
 
         function prepareEdit(rowIndex, data) {
