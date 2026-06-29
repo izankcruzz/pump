@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -1721,6 +1721,41 @@
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
 
+    const deleteWalletLinks = async (refType, refId, fallback = null) => {
+      try {
+        const { error: refError } = await db
+          .from("capital_wallet_entries")
+          .delete()
+          .eq("ref_type", refType)
+          .eq("ref_id", refId);
+        if (refError) throw refError;
+        if (!fallback) return;
+
+        let query = db
+          .from("capital_wallet_entries")
+          .select("id")
+          .eq("ref_type", refType)
+          .is("ref_id", null)
+          .eq("tx_type", "use")
+          .eq("amount", Number(fallback.amount || 0));
+        if (fallback.note) query = query.eq("note", fallback.note);
+        if (fallback.start && fallback.end) {
+          query = query.gte("tx_at", fallback.start).lte("tx_at", fallback.end);
+        }
+        const { data, error: findError } = await query;
+        if (findError) throw findError;
+        if ((data || []).length !== 1) return;
+        const { error: deleteError } = await db
+          .from("capital_wallet_entries")
+          .delete()
+          .eq("id", data[0].id);
+        if (deleteError) throw deleteError;
+      } catch (err) {
+        if (!String(err.message || "").includes("capital_wallet_entries")) throw err;
+        console.warn("capital wallet cleanup skipped", err);
+      }
+    };
+
     if (table === "debts") {
       const { data: debt, error: debtError } = await db.from("debts").select("*").eq("id", rowIndex).maybeSingle();
       if (debtError) throw debtError;
@@ -1778,6 +1813,19 @@
           if (stockError) throw stockError;
         }
       }
+      await deleteWalletLinks("purchase", rowIndex);
+    }
+
+    if (table === "expenses") {
+      const { data: expense, error: expenseError } = await db.from("expenses").select("*").eq("id", rowIndex).maybeSingle();
+      if (expenseError) throw expenseError;
+      const day = expense && bkkDate(expense.spent_at);
+      await deleteWalletLinks("expense", rowIndex, expense ? {
+        amount: Number(expense.amount || 0),
+        note: expense.title || "",
+        start: day ? `${day}T00:00:00+07:00` : null,
+        end: day ? `${day}T23:59:59+07:00` : null
+      } : null);
     }
 
     if (table === "fuel_tests") {
