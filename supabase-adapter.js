@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-wallet-delete-fix-v94";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -513,19 +513,20 @@
     };
     for (const item of items || []) {
       if (item.type === "cashExpense" || item.type === "capitalExpense") {
-        const { error } = await db.from("expenses").insert({
+        const { data: insertedExpense, error } = await db.from("expenses").insert({
           title: item.productName,
           amount: Number(item.totalPrice || item.pricePerUnit || 0),
           note: "จากจัดการสต็อก",
           expense_type: item.type === "capitalExpense" ? "capital" : "expense"
-        });
+        }).select("id").single();
         if (error) throw error;
         if (item.paymentSource === "wallet") {
           await insertWalletEntry({
             tx_type: "use",
             amount: Number(item.totalPrice || item.pricePerUnit || 0),
             note: item.productName || "ใช้เงินฝากทุน",
-            ref_type: "expense"
+            ref_type: "expense",
+            ref_id: insertedExpense && insertedExpense.id || null
           });
         }
         continue;
@@ -873,7 +874,35 @@
       time: thaiTime(row.tested_at),
       qty: Number(row.qty || 0)
     }));
-    const walletList = walletEntries.map(row => ({
+    const purchaseIds = new Set(purchases.map(row => String(row.id || "")).filter(Boolean));
+    const expenseIds = new Set(expenses.map(row => String(row.id || "")).filter(Boolean));
+    const matchesLiveMoneyRow = (wallet, rows, nameField, dateField) => {
+      const amount = Number(wallet.amount || 0);
+      const day = bkkDate(wallet.tx_at);
+      const note = String(wallet.note || "").toLowerCase();
+      return (rows || []).some(row => {
+        if (bkkDate(row[dateField]) !== day) return false;
+        const rowAmount = Number(row.total || row.amount || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0);
+        if (Math.abs(rowAmount - amount) > 1) return false;
+        const name = String(row[nameField] || "").toLowerCase();
+        return !name || !note || note.includes(name) || name.includes(note);
+      });
+    };
+    const isLiveWalletEntry = row => {
+      if (String(row.tx_type || "") !== "use") return true;
+      const refType = String(row.ref_type || "").toLowerCase();
+      const refId = row.ref_id ? String(row.ref_id) : "";
+      if (refType === "purchase") {
+        if (refId) return purchaseIds.has(refId);
+        return matchesLiveMoneyRow(row, purchases, "product_name", "purchased_at");
+      }
+      if (refType === "expense") {
+        if (refId) return expenseIds.has(refId);
+        return matchesLiveMoneyRow(row, expenses, "title", "spent_at");
+      }
+      return true;
+    };
+    const walletList = walletEntries.filter(isLiveWalletEntry).map(row => ({
       id: row.id,
       type: row.tx_type,
       amount: Number(row.amount || 0),
@@ -1720,6 +1749,38 @@
   async function deleteHistoryRow(type, rowIndex) {
     const db = await ensureReady();
     const table = type === "expense" ? "expenses" : type === "stock" ? "purchases" : type === "debt" ? "debts" : type === "fueltest" ? "fuel_tests" : "sales";
+    const deleteLinkedWalletUses = async (refType, row, dateField, nameField) => {
+      if (!row) return;
+      const day = bkkDate(row[dateField]);
+      const rowId = String(row.id || "");
+      const rowAmount = Number(row.total || row.amount || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0);
+      const rowName = String(row[nameField] || "").toLowerCase();
+      const { data, error } = await db
+        .from("capital_wallet_entries")
+        .select("*")
+        .eq("tx_type", "use")
+        .eq("ref_type", refType)
+        .gte("tx_at", `${day}T00:00:00+07:00`)
+        .lte("tx_at", `${day}T23:59:59+07:00`);
+      if (error) {
+        if (String(error.message || "").includes("capital_wallet_entries")) return;
+        throw error;
+      }
+      const ids = (data || [])
+        .filter(entry => {
+          if (entry.ref_id && String(entry.ref_id) === rowId) return true;
+          if (entry.ref_id) return false;
+          if (Math.abs(Number(entry.amount || 0) - rowAmount) > 1) return false;
+          const note = String(entry.note || "").toLowerCase();
+          return !rowName || !note || note.includes(rowName) || rowName.includes(note);
+        })
+        .map(entry => entry.id)
+        .filter(Boolean);
+      if (ids.length) {
+        const { error: deleteWalletError } = await db.from("capital_wallet_entries").delete().in("id", ids);
+        if (deleteWalletError) throw deleteWalletError;
+      }
+    };
 
     if (table === "debts") {
       const { data: debt, error: debtError } = await db.from("debts").select("*").eq("id", rowIndex).maybeSingle();
@@ -1764,9 +1825,16 @@
       }
     }
 
+    if (table === "expenses") {
+      const { data: expense, error: expenseError } = await db.from("expenses").select("*").eq("id", rowIndex).maybeSingle();
+      if (expenseError) throw expenseError;
+      await deleteLinkedWalletUses("expense", expense, "spent_at", "title");
+    }
+
     if (table === "purchases") {
       const { data: purchase, error: purchaseError } = await db.from("purchases").select("*").eq("id", rowIndex).maybeSingle();
       if (purchaseError) throw purchaseError;
+      await deleteLinkedWalletUses("purchase", purchase, "purchased_at", "product_name");
       if (purchase && purchase.product_id) {
         const { data: product, error: productError } = await db.from("products").select("stock_qty").eq("id", purchase.product_id).maybeSingle();
         if (productError) throw productError;
