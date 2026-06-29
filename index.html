@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93-wallet-cleanup-capital-badge"></script>
+    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93-wallet-cleanup-capital-expense-report"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -4329,7 +4329,7 @@
             const lists = (data && data.lists) || {};
             const sales = groupReportItems(lists.sales || [], 'total');
             const repayments = Array.isArray(lists.repayments) ? lists.repayments : [];
-            const expenses = Array.isArray(lists.expenses) ? lists.expenses : [];
+            const expenses = (Array.isArray(lists.expenses) ? lists.expenses : []).filter(item => item.type !== 'stock');
             const debts = Array.isArray(lists.debts) ? lists.debts : [];
             const fuelTests = Array.isArray(lists.fuelTests) ? lists.fuelTests : [];
             const capitalItems = Array.isArray(lists.capital) ? lists.capital : [];
@@ -4455,7 +4455,7 @@
                 sales: reportMoney(summary.sales),
                 sales_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)} (${reportMoney(item.total)}บ.)`),
                 expense: reportMoney(summary.expenses),
-                expense_desc: lineFlexTextList(lists.expenses || [], item => `${item.title || '-'}: ${reportMoney(item.amount)}บ.`),
+                expense_desc: lineFlexTextList((lists.expenses || []).filter(item => item.type !== 'stock'), item => `${item.title || '-'}: ${reportMoney(item.amount)}บ.`),
                 profit_gross: reportMoney(summary.profit || 0),
                 profit_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ขาย ${reportMoney(item.total)}บ. | กำไร ${reportMoney(item.profit)}บ.`),
                 capital_return: reportMoney(summary.capitalReturned || 0),

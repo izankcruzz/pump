@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup-capital-badge";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup-capital-expense-report";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -517,7 +517,7 @@
           title: item.productName,
           amount: Number(item.totalPrice || item.pricePerUnit || 0),
           note: "จากจัดการสต็อก",
-          expense_type: item.type === "capitalExpense" ? "capital" : "expense"
+          expense_type: "capital"
         });
         if (error) throw error;
         if (item.paymentSource === "wallet") {
@@ -999,7 +999,7 @@
     return {
       summary: {
         sales: totalSales,
-        expenses: totalExpenses,
+        expenses: generalExpenses,
         debt: totalDebt,
         cash: netCash,
         profit,
