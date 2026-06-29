@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-wallet-delete-fix-v94";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-cash-capital-expense-v95";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -517,7 +517,7 @@
           title: item.productName,
           amount: Number(item.totalPrice || item.pricePerUnit || 0),
           note: "จากจัดการสต็อก",
-          expense_type: item.type === "capitalExpense" ? "capital" : "expense"
+          expense_type: (item.type === "capitalExpense" || item.type === "cashExpense") ? "capital" : "expense"
         }).select("id").single();
         if (error) throw error;
         if (item.paymentSource === "wallet") {
@@ -922,6 +922,18 @@
     const totalSales = salesList.reduce((sum, row) => sum + row.total, 0);
     const totalExpenses = expenseList.reduce((sum, row) => sum + row.amount, 0);
     const totalDebt = periodDebtList.reduce((sum, row) => sum + row.amount, 0);
+    const salesByDayForDebt = {};
+    const debtByDayForCash = {};
+    salesList.forEach(row => {
+      const day = row.day || bkkDate();
+      salesByDayForDebt[day] = (salesByDayForDebt[day] || 0) + Number(row.total || 0);
+    });
+    periodDebtList.forEach(row => {
+      const day = row.day || bkkDate();
+      debtByDayForCash[day] = (debtByDayForCash[day] || 0) + Number(row.amount || 0);
+    });
+    const debtCashImpact = Object.keys(debtByDayForCash)
+      .reduce((sum, day) => sum + Math.min(Number(salesByDayForDebt[day] || 0), Number(debtByDayForCash[day] || 0)), 0);
     const debtRepaid = repayList.reduce((sum, row) => sum + row.amount, 0);
     const walletDeposit = walletList.filter(row => row.type === "deposit").reduce((sum, row) => sum + row.amount, 0);
     const walletUsed = walletList.filter(row => row.type === "use").reduce((sum, row) => sum + row.amount, 0);
@@ -948,7 +960,7 @@
     const profitBalance = ledgerBalances.profit !== null
       ? ledgerBalances.profit + balanceDeltas.profit - balanceDeltas.generalExpenses
       : liveProfit - liveGeneralExpenses;
-    const netCash = totalSales + walletUsed - stockPaid - totalDebt - generalExpenses + debtRepaid;
+    const netCash = totalSales + walletUsed - stockPaid - debtCashImpact - generalExpenses + debtRepaid;
     const sumRowsByName = items => {
       const map = new Map();
       (items || []).forEach(item => {
@@ -1080,6 +1092,7 @@
           stockPaid: chartDays.map(day => chartByDay[day].stockPaid),
           walletUsed: chartDays.map(day => chartByDay[day].walletUsed),
           debt: chartDays.map(day => chartByDay[day].debt),
+          debtCashImpact: chartDays.map(day => Math.min(Number(chartByDay[day].total || 0), Number(chartByDay[day].debt || 0))),
           repaid: chartDays.map(day => chartByDay[day].repaid),
           sales: chartDays.map(day => chartByDay[day].total),
           cash: chartDays.map(day => chartByDay[day].capital),
@@ -1090,6 +1103,7 @@
             stockPaid,
             walletUsed,
             debt: totalDebt,
+            debtCashImpact,
             repaid: debtRepaid,
             net: netCash
           }

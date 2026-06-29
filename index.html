@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260629-wallet-delete-fix-v94"></script>
+    <script src="./supabase-adapter.js?v=20260629-cash-capital-expense-v95"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2773,6 +2773,7 @@
             const stockPaidTotal = data.stockPaid || [];
             const walletUsedTotal = data.walletUsed || [];
             const debtTotal = data.debt || [];
+            const debtCashImpactTotal = data.debtCashImpact || [];
             const ledgerTotals = data.totals || null;
             const rows = (labels || []).map((label, idx) => ({
                 label,
@@ -2783,7 +2784,8 @@
                 stockPaid: Number(stockPaidTotal[idx] || 0),
                 walletUsed: Number(walletUsedTotal[idx] || 0),
                 debt: Number(debtTotal[idx] || 0),
-                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
+                debtCashImpact: Number(debtCashImpactTotal[idx] ?? Math.min(Number(moneyTotal[idx] || 0), Number(debtTotal[idx] || 0))),
+                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtCashImpactTotal[idx] ?? Math.min(Number(moneyTotal[idx] || 0), Number(debtTotal[idx] || 0)))
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2799,11 +2801,13 @@
                 stockPaid: sum.stockPaid + row.stockPaid,
                 walletUsed: sum.walletUsed + row.walletUsed,
                 debt: sum.debt + row.debt,
+                debtCashImpact: sum.debtCashImpact + row.debtCashImpact,
                 net: sum.net + row.net
-            }), { total: 0, capital: 0, capitalNet: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, net: 0 });
+            }), { total: 0, capital: 0, capitalNet: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, debtCashImpact: 0, net: 0 });
             const totals = { ...rawTotals, ...(ledgerTotals || {}) };
             totals.capitalNet = Number(totals.capitalNet ?? (Number(totals.capital || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0)));
-            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
+            totals.debtCashImpact = Number(totals.debtCashImpact ?? Math.min(Number(totals.total || 0), Number(totals.debt || 0)));
+            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debtCashImpact || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
