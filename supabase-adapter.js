@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup-capital-badge";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";

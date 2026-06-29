@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93-wallet-cleanup"></script>
+    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93-wallet-cleanup-capital-badge"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -2397,9 +2397,10 @@
             const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
             const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
             const salesCapital = salesTotal - salesProfit;
+            const salesCapitalNet = salesCapital + Number(data && data.summary && data.summary.walletUsed || 0) - Number(data && data.summary && data.summary.stockPaid || 0);
             setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
             setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
-            setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
+            setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapitalNet).toLocaleString('th-TH')} บาท`);
             const salesProfitEl = document.getElementById('list-sales-profit');
             if (salesProfitEl) {
                 salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
@@ -2533,9 +2534,10 @@
                 setTextIfExists('dash-cash-source', fmt0(data.summary.cash));
                 setTextIfExists('dash-profit', fmt0(data.summary.netProfit));
                 setTextIfExists('dash-profit-balance', `${fmt0(getDashboardTableProfit(data))} บาท`);
+                const dailyCapitalNet = Number(data.summary.capitalReturned || 0) + Number(data.summary.walletUsed || 0) - Number(data.summary.stockPaid || 0);
                 setTextIfExists('dash-capital', fmt0(data.summary.capitalBalance));
-                setTextIfExists('dash-capital-detail', `ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)} | นำเข้า ${fmt0(data.summary.capitalManualIn || 0)} | นำออก ${fmt0(data.summary.capitalManualOut || 0)}`);
-                setTextIfExists('dash-capital-day', fmt0(data.summary.capitalReturned));
+                setTextIfExists('dash-capital-detail', `ทุนสุทธิ ${fmt0(dailyCapitalNet)} | ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)} | นำเข้า ${fmt0(data.summary.capitalManualIn || 0)} | นำออก ${fmt0(data.summary.capitalManualOut || 0)}`);
+                setTextIfExists('dash-capital-day', fmt0(dailyCapitalNet));
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
                 const dailyListTitle = document.getElementById('daily-list-title');
@@ -2638,9 +2640,10 @@
                 setTextIfExists('dash-cash-source', data.summary.cash.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-profit', data.summary.netProfit.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-profit-balance', `${getDashboardTableProfit(data).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
+                const dailyCapitalNet = Number(data.summary.capitalReturned || 0) + Number(data.summary.walletUsed || 0) - Number(data.summary.stockPaid || 0);
                 setTextIfExists('dash-capital', data.summary.capitalBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
-                setTextIfExists('dash-capital-detail', `ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำเข้า ${(data.summary.capitalManualIn || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำออก ${(data.summary.capitalManualOut || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
-                setTextIfExists('dash-capital-day', data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
+                setTextIfExists('dash-capital-detail', `ทุนสุทธิ ${dailyCapitalNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำเข้า ${(data.summary.capitalManualIn || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำออก ${(data.summary.capitalManualOut || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
+                setTextIfExists('dash-capital-day', dailyCapitalNet.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 setTextIfExists('dash-repaid', (data.summary.debtRepaid || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-repaid-source', (data.summary.debtRepaid || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
@@ -2652,9 +2655,10 @@
                 const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
                 const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
                 const salesCapital = salesTotal - salesProfit;
+                const salesCapitalNet = salesCapital + Number(data && data.summary && data.summary.walletUsed || 0) - Number(data && data.summary && data.summary.stockPaid || 0);
                 setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
                 setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
-                setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapital).toLocaleString('th-TH')} บาท`);
+                setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapitalNet).toLocaleString('th-TH')} บาท`);
                 const salesProfitEl = document.getElementById('list-sales-profit');
                 if (salesProfitEl) {
                     salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
