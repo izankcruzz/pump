@@ -4457,6 +4457,7 @@
             const capitalItems = Array.isArray(lists.capital) ? lists.capital : [];
             const dateText = currentDashMode === 'month' ? `เดือน ${label || ''}` : (label || '');
             const signed = (value) => reportMoney(value, Number(value) >= 0 ? '+' : '');
+            const monthlyProfit = summary.monthlyProfit ?? summary.profitBalance ?? 0;
 
             return {
                 date: dateText,
@@ -4475,8 +4476,8 @@
                 profit_today_color: lineFlexColor(summary.netProfit || 0, '#7C3AED'),
                 capital_today: signed(summary.capitalReturned || 0),
                 capital_today_color: lineFlexColor(summary.capitalReturned || 0, '#0891B2'),
-                monthly_profit: signed(summary.profitBalance || 0),
-                monthly_profit_color: lineFlexColor(summary.profitBalance || 0, '#7C3AED'),
+                monthly_profit: signed(monthlyProfit),
+                monthly_profit_color: lineFlexColor(monthlyProfit, '#7C3AED'),
                 capital_total: reportMoney(summary.capitalBalance || 0),
                 capital_desc: lineFlexTextList(capitalItems, item => {
                     const qty = item.qty ? ` x${reportQty(item.qty, item.unit)}` : '';
