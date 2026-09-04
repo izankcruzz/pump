@@ -2777,6 +2777,7 @@
             const stockPaidTotal = data.stockPaid || [];
             const walletUsedTotal = data.walletUsed || [];
             const debtTotal = data.debt || [];
+            const repaidTotal = data.repaid || [];
             const ledgerTotals = data.totals || null;
             const rows = (labels || []).map((label, idx) => ({
                 label,
@@ -2787,7 +2788,8 @@
                 stockPaid: Number(stockPaidTotal[idx] || 0),
                 walletUsed: Number(walletUsedTotal[idx] || 0),
                 debt: Number(debtTotal[idx] || 0),
-                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0)
+                repaid: Number(repaidTotal[idx] || 0),
+                net: Number(moneyTotal[idx] || 0) + Number(walletUsedTotal[idx] || 0) - Number(stockPaidTotal[idx] || 0) - Number(debtTotal[idx] || 0) + Number(repaidTotal[idx] || 0)
             }));
             const visibleRows = rows;
             if (!visibleRows.length) {
@@ -2803,21 +2805,23 @@
                 stockPaid: sum.stockPaid + row.stockPaid,
                 walletUsed: sum.walletUsed + row.walletUsed,
                 debt: sum.debt + row.debt,
+                repaid: sum.repaid + row.repaid,
                 net: sum.net + row.net
-            }), { total: 0, capital: 0, capitalNet: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, net: 0 });
+            }), { total: 0, capital: 0, capitalNet: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, repaid: 0, net: 0 });
             const totals = { ...rawTotals, ...(ledgerTotals || {}) };
             totals.capitalNet = Number(totals.capitalNet ?? (Number(totals.capital || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0)));
-            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0)));
+            totals.net = Number(totals.net ?? (Number(totals.total || 0) + Number(totals.walletUsed || 0) - Number(totals.stockPaid || 0) - Number(totals.debt || 0) + Number(totals.repaid || 0)));
             const moneyClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-indigo-600';
             const capitalClass = value => value === 0 ? 'text-slate-400' : 'text-sky-600';
             const profitClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-purple-600';
             const stockPaidClass = value => value === 0 ? 'text-slate-400' : 'text-orange-600';
             const walletClass = value => value === 0 ? 'text-slate-400' : 'text-emerald-600';
             const debtClass = value => value === 0 ? 'text-slate-400' : 'text-red-600';
+            const repaidClass = value => value === 0 ? 'text-slate-400' : 'text-teal-600';
             const netClass = value => value < 0 ? 'text-red-600' : value === 0 ? 'text-slate-400' : 'text-emerald-600';
             container.innerHTML = `
                 <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="w-full min-w-[980px] border-collapse text-sm table-fixed">
+                    <table class="w-full min-w-[1110px] border-collapse text-sm table-fixed">
                         <colgroup>
                             <col class="w-[110px]">
                             <col class="w-[130px]">
@@ -2826,6 +2830,7 @@
                             <col class="w-[120px]">
                             <col class="w-[125px]">
                             <col class="w-[115px]">
+                            <col class="w-[130px]">
                             <col class="w-[145px]">
                         </colgroup>
                         <thead>
@@ -2837,6 +2842,7 @@
                                 <th class="px-3 py-3 text-right">จ่ายทุน</th>
                                 <th class="px-3 py-3 text-right">เงินฝากใช้</th>
                                 <th class="px-3 py-3 text-right">ค้างชำระ</th>
+                                <th class="px-3 py-3 text-right">รับชำระหนี้</th>
                                 <th class="px-3 py-3 text-right">เงินสดจริง</th>
                             </tr>
                         </thead>
@@ -2850,6 +2856,7 @@
                                     <td class="px-3 py-3 text-right font-black whitespace-nowrap ${stockPaidClass(row.stockPaid)}">${fmt(row.stockPaid)}</td>
                                     <td class="px-3 py-3 text-right font-black whitespace-nowrap ${walletClass(row.walletUsed)}">${fmt(row.walletUsed)}</td>
                                     <td class="px-3 py-3 text-right font-black whitespace-nowrap ${debtClass(row.debt)}">${fmt(row.debt)}</td>
+                                    <td class="px-3 py-3 text-right font-black whitespace-nowrap ${repaidClass(row.repaid)}">${fmt(row.repaid)}</td>
                                     <td class="px-3 py-3 text-right font-black whitespace-nowrap ${netClass(row.net)}">${fmt(row.net)}</td>
                                 </tr>
                             `).join('')}
@@ -2863,6 +2870,7 @@
                                 <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.stockPaid)}</td>
                                 <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.walletUsed)}</td>
                                 <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.debt)}</td>
+                                <td class="px-3 py-4 text-right font-black whitespace-nowrap">${fmt(totals.repaid)}</td>
                                 <td class="px-3 py-4 text-right font-black whitespace-nowrap rounded-br-xl">${fmt(totals.net)}</td>
                             </tr>
                         </tfoot>
