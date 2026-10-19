@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20261019-fuel-stock-adjust-v94"></script>
+    <script src="./supabase-adapter.js?v=20261019-fuel-stock-adjust-v95"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -4561,13 +4561,13 @@
         function submitFuelStockAdjust() {
             const fuelItem = getFuelItemByAdjustType(currentFuelAdjustType);
             if (!fuelItem) {
-                showStatusModal('error', 'ไม่พบข้อมูลน้ำมัน', 'กรุณารีเฟรชหน้าเว็บแล้วลองใหม่อีกครั้ง');
+                alert('ไม่พบข้อมูลน้ำมัน กรุณารีเฟรชหน้าเว็บแล้วลองใหม่อีกครั้ง');
                 return;
             }
             const rawActual = document.getElementById('fa-actual-qty')?.value;
             const actualQty = Number(rawActual);
             if (rawActual === '' || !Number.isFinite(actualQty) || actualQty < 0) {
-                showStatusModal('error', 'ข้อมูลไม่ถูกต้อง', 'กรุณากรอกยอดน้ำมันที่วัดได้จริงเป็นตัวเลข 0 ขึ้นไป');
+                alert('กรุณากรอกยอดน้ำมันที่วัดได้จริงเป็นตัวเลข 0 ขึ้นไป');
                 return;
             }
             const sysQty = Number(fuelItem.stock || 0);
@@ -4575,54 +4575,51 @@
             const note = (document.getElementById('fa-note')?.value || '').trim();
             const diffText = `${diff > 0 ? '+' : ''}${diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร`;
 
-            showConfirmModal(
-                'ยืนยันปรับยอดน้ำมันตามจริง',
-                `ต้องการปรับยอด "${fuelItem.name}"\nจากในระบบ ${sysQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร -> เป็น ${actualQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร\n(ส่วนต่าง: ${diffText}) ใช่หรือไม่?`,
-                () => {
-                    const btn = document.getElementById('btn-fa-save');
-                    const oldHtml = btn ? btn.innerHTML : '';
-                    if (btn) {
-                        btn.disabled = true;
-                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>กำลังบันทึก...';
-                    }
-                    google.script.run.withSuccessHandler(res => {
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.innerHTML = oldHtml;
-                        }
-                        if (res && res.status === 'success') {
-                            // Update local state immediately
-                            fuelItem.stock = Number(res.actualQty ?? actualQty);
-                            refreshFuelAdjustCardBadges();
-                            selectFuelAdjustType(currentFuelAdjustType);
-                            renderStockProducts();
-                            loadFuelStockAdjustHistory();
-                            loadDataFromSheet();
-                            const noteEl = document.getElementById('fa-note');
-                            if (noteEl) noteEl.value = '';
-                            showStatusModal(
-                                'success',
-                                'ปรับยอดน้ำมันสำเร็จ',
-                                `${res.fuelName || fuelItem.name}: ปรับเป็น ${Number(res.actualQty ?? actualQty).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร เรียบร้อยแล้ว`
-                            );
-                        } else {
-                            showStatusModal('error', 'บันทึกไม่สำเร็จ', (res && res.message) || 'เกิดข้อผิดพลาด');
-                        }
-                    }).withFailureHandler(err => {
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.innerHTML = oldHtml;
-                        }
-                        showStatusModal('error', 'เกิดข้อผิดพลาด', err.message || String(err));
-                    }).saveFuelStockAdjustment({
-                        productId: fuelItem.id,
-                        fuelType: currentFuelAdjustType,
-                        fuelName: fuelItem.name,
-                        actualQty: actualQty,
-                        note: note || (diff < 0 ? 'วัดถังปรับยอดตามจริง (น้ำมันระเหย)' : 'วัดถังปรับยอดตามจริง')
-                    });
+            if (!confirm(`ยืนยันปรับยอดน้ำมันตามจริง?\n\nน้ำมัน: ${fuelItem.name}\nในระบบ: ${sysQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร\nวัดจริง: ${actualQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร\nส่วนต่าง: ${diffText}\n\n(ไม่หักเงินสด และไม่กระทบยอดขาย/กำไร)`)) {
+                return;
+            }
+
+            const btn = document.getElementById('btn-fa-save');
+            const oldHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>กำลังบันทึก...';
+            }
+            google.script.run.withSuccessHandler(res => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = oldHtml;
                 }
-            );
+                const isErrObj = res && typeof res === 'object' && res.status === 'error';
+                if (!isErrObj) {
+                    fuelItem.stock = Number((res && res.actualQty) ?? actualQty);
+                    refreshFuelAdjustCardBadges();
+                    selectFuelAdjustType(currentFuelAdjustType);
+                    renderStockProducts();
+                    loadFuelStockAdjustHistory();
+                    loadDataFromSheet();
+                    const noteEl = document.getElementById('fa-note');
+                    if (noteEl) noteEl.value = '';
+                    const msg = typeof res === 'string' && res
+                        ? res
+                        : `${(res && res.fuelName) || fuelItem.name}: ปรับเป็น ${Number((res && res.actualQty) ?? actualQty).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร เรียบร้อยแล้ว`;
+                    showSuccess(msg);
+                } else {
+                    alert('❌ บันทึกไม่สำเร็จ: ' + ((res && res.message) || 'เกิดข้อผิดพลาด'));
+                }
+            }).withFailureHandler(err => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = oldHtml;
+                }
+                alert('❌ เกิดข้อผิดพลาด: ' + (err.message || String(err)));
+            }).saveFuelStockAdjustment({
+                productId: fuelItem.id,
+                fuelType: currentFuelAdjustType,
+                fuelName: fuelItem.name,
+                actualQty: actualQty,
+                note: note || (diff < 0 ? 'วัดถังปรับยอดตามจริง (น้ำมันระเหย)' : 'วัดถังปรับยอดตามจริง')
+            });
         }
 
         function loadFuelStockAdjustHistory() {
@@ -4645,7 +4642,9 @@
                         ? 'bg-rose-100 text-rose-700'
                         : (isGain ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600');
                     const diffLabel = isLoss ? 'ระเหย/ลดลง' : (isGain ? 'เพิ่มขึ้น' : 'ตรงกัน');
-                    const fuelBadge = String(r.fuelName || '').includes('ดีเซล')
+                    const fuelTitle = r.productName || r.fuelName || '-';
+                    const dateDisplay = r.dateStr || [r.date, r.time].filter(Boolean).join(' ');
+                    const fuelBadge = String(fuelTitle).includes('ดีเซล')
                         ? 'bg-blue-100 text-blue-700'
                         : 'bg-orange-100 text-orange-700';
 
@@ -4653,8 +4652,8 @@
                     <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
                         <div class="space-y-1 min-w-0">
                             <div class="flex items-center gap-1.5 flex-wrap">
-                                <span class="font-bold px-2 py-0.5 rounded-md ${fuelBadge}">${r.fuelName || '-'}</span>
-                                <span class="text-slate-400 font-medium">${r.dateStr || ''}</span>
+                                <span class="font-bold px-2 py-0.5 rounded-md ${fuelBadge}">${fuelTitle}</span>
+                                <span class="text-slate-400 font-medium">${dateDisplay}</span>
                             </div>
                             <div class="text-slate-600 font-semibold">
                                 ในระบบ <span class="text-slate-800 font-bold">${Number(r.systemQty || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -4681,27 +4680,25 @@
 
         function undoFuelStockAdjust(adjustId) {
             if (!adjustId) return;
-            showConfirmModal(
-                'ยกเลิกรายการปรับยอดน้ำมัน',
-                'ต้องการยกเลิกรายการปรับยอดนี้ และคืนจำนวนลิตรในระบบกลับไปก่อนปรับยอดใช่หรือไม่?',
-                () => {
-                    google.script.run.withSuccessHandler(res => {
-                        if (res && res.status === 'success') {
-                            loadDataFromSheet();
-                            setTimeout(() => {
-                                refreshFuelAdjustCardBadges();
-                                selectFuelAdjustType(currentFuelAdjustType);
-                                loadFuelStockAdjustHistory();
-                            }, 350);
-                            showStatusModal('success', 'ยกเลิกรายการสำเร็จ', 'คืนยอดน้ำมันกลับสู่ระบบเรียบร้อยแล้ว');
-                        } else {
-                            showStatusModal('error', 'ยกเลิกไม่สำเร็จ', (res && res.message) || 'เกิดข้อผิดพลาด');
-                        }
-                    }).withFailureHandler(err => {
-                        showStatusModal('error', 'เกิดข้อผิดพลาด', err.message || String(err));
-                    }).deleteFuelStockAdjustment(adjustId);
+            if (!confirm('ต้องการยกเลิกรายการปรับยอดนี้ และคืนจำนวนลิตรในระบบกลับไปก่อนปรับยอดใช่หรือไม่?')) {
+                return;
+            }
+            google.script.run.withSuccessHandler(res => {
+                const isErrObj = res && typeof res === 'object' && res.status === 'error';
+                if (!isErrObj) {
+                    loadDataFromSheet();
+                    setTimeout(() => {
+                        refreshFuelAdjustCardBadges();
+                        selectFuelAdjustType(currentFuelAdjustType);
+                        loadFuelStockAdjustHistory();
+                    }, 500);
+                    showSuccess(typeof res === 'string' && res ? res : 'คืนยอดน้ำมันกลับสู่ระบบเรียบร้อยแล้ว');
+                } else {
+                    alert('❌ ยกเลิกไม่สำเร็จ: ' + ((res && res.message) || 'เกิดข้อผิดพลาด'));
                 }
-            );
+            }).withFailureHandler(err => {
+                alert('❌ เกิดข้อผิดพลาด: ' + (err.message || String(err)));
+            }).deleteFuelStockAdjustment(adjustId);
         }
 
         function closeCopyReportModal() {

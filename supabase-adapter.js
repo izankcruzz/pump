@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-10-19-fuel-stock-adjust-v94";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-10-19-fuel-stock-adjust-v95";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
