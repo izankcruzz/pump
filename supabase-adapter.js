@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-06-29-expense-edit-v93-wallet-cleanup-capital-expense-report";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-10-19-fuel-stock-adjust-v94";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -1475,6 +1475,126 @@
     }));
   }
 
+  async function saveFuelStockAdjustment(form = {}) {
+    const db = await ensureReady();
+    const rows = await productRows();
+    const { gas95, diesel } = findFuelRows(rows);
+    let product = null;
+    if (form.productId) {
+      product = rows.find(row => String(row.id) === String(form.productId));
+    }
+    if (!product && form.fuelType) {
+      if (form.fuelType === "gas95" || form.fuelType === "เบนซิน 95") product = gas95;
+      else if (form.fuelType === "diesel" || form.fuelType === "ดีเซล") product = diesel;
+      else product = rows.find(row => row.name === form.fuelType);
+    }
+    if (!product) throw new Error("ไม่พบข้อมูลน้ำมันที่ต้องการปรับยอด");
+
+    const actualQty = Math.round(Number(form.actualQty) * 1000) / 1000;
+    if (!Number.isFinite(actualQty) || actualQty < 0) {
+      throw new Error("กรุณากรอกปริมาณน้ำมันคงเหลือจริงให้ถูกต้อง (ต้องไม่ติดลบ)");
+    }
+
+    const systemQty = Math.round(Number(product.stock_qty || 0) * 1000) / 1000;
+    const diffQty = Math.round((actualQty - systemQty) * 1000) / 1000;
+    const note = String(form.note || "").trim() || (diffQty < 0 ? "วัดถังปรับยอดจริง (น้ำมันระเหย)" : "วัดถังปรับยอดน้ำมันตามจริง");
+
+    const rpcRes = await db.rpc("app_adjust_fuel_stock", {
+      p_product_id: product.id,
+      p_actual_qty: actualQty,
+      p_note: note
+    });
+
+    if (rpcRes.error) {
+      const { error: updateErr } = await db
+        .from("products")
+        .update({ stock_qty: actualQty })
+        .eq("id", product.id);
+      if (updateErr) throw updateErr;
+
+      try {
+        await db.from("fuel_stock_adjustments").insert({
+          product_id: product.id,
+          product_name: product.name,
+          system_qty: systemQty,
+          actual_qty: actualQty,
+          diff_qty: diffQty,
+          unit: product.unit || "ลิตร",
+          avg_cost: Number(product.avg_cost || 0),
+          note
+        });
+      } catch (logErr) {
+        console.warn("fuel_stock_adjustments insert skipped", logErr);
+      }
+    }
+
+    const diffSign = diffQty > 0 ? "+" : "";
+    return `ปรับยอด ${product.name} เป็น ${actualQty.toLocaleString("th-TH", { maximumFractionDigits: 2 })} ลิตร เรียบร้อย (${diffSign}${diffQty.toLocaleString("th-TH", { maximumFractionDigits: 2 })} ลิตร)`;
+  }
+
+  async function getFuelStockAdjustHistory(limit = 30) {
+    const db = await ensureReady();
+    try {
+      const { data, error } = await db
+        .from("fuel_stock_adjustments")
+        .select("*")
+        .order("adjusted_at", { ascending: false })
+        .limit(Number(limit) || 30);
+      if (error) throw error;
+      return (data || []).map(row => ({
+        id: row.id,
+        date: thaiDate(row.adjusted_at),
+        time: thaiTime(row.adjusted_at),
+        productId: row.product_id,
+        productName: row.product_name,
+        systemQty: Number(row.system_qty || 0),
+        actualQty: Number(row.actual_qty || 0),
+        diffQty: Number(row.diff_qty || 0),
+        unit: row.unit || "ลิตร",
+        avgCost: Number(row.avg_cost || 0),
+        note: row.note || ""
+      }));
+    } catch (err) {
+      console.warn("getFuelStockAdjustHistory fallback", err);
+      return [];
+    }
+  }
+
+  async function deleteFuelStockAdjustment(adjustId) {
+    const db = await ensureReady();
+    const { data: adj, error: findErr } = await db
+      .from("fuel_stock_adjustments")
+      .select("*")
+      .eq("id", adjustId)
+      .maybeSingle();
+    if (findErr) throw findErr;
+    if (!adj) throw new Error("ไม่พบรายการปรับยอดนี้");
+
+    if (adj.product_id) {
+      const { data: prod, error: prodErr } = await db
+        .from("products")
+        .select("stock_qty")
+        .eq("id", adj.product_id)
+        .maybeSingle();
+      if (prodErr) throw prodErr;
+      if (prod) {
+        const restoredQty = Math.max(0, Math.round((Number(prod.stock_qty || 0) - Number(adj.diff_qty || 0)) * 1000) / 1000);
+        const { error: updErr } = await db
+          .from("products")
+          .update({ stock_qty: restoredQty })
+          .eq("id", adj.product_id);
+        if (updErr) throw updErr;
+      }
+    }
+
+    const { error: delErr } = await db
+      .from("fuel_stock_adjustments")
+      .delete()
+      .eq("id", adjustId);
+    if (delErr) throw delErr;
+    return "ยกเลิกรายการปรับยอดและคืนค่าสต็อกแล้ว";
+  }
+
   async function findFuelLogForSale(db, sale) {
     if (!sale) return null;
     if (sale.fuel_log_id) {
@@ -1874,6 +1994,9 @@
     updateOilPrices,
     saveFuelTest,
     getFuelTestHistory,
+    saveFuelStockAdjustment,
+    getFuelStockAdjustHistory,
+    deleteFuelStockAdjustment,
     getRecentHistory,
     updateHistoryRow,
     deleteHistoryRow,

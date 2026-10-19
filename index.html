@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20260629-expense-edit-v93-wallet-cleanup-capital-expense-report"></script>
+    <script src="./supabase-adapter.js?v=20261019-fuel-stock-adjust-v94"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -638,6 +638,9 @@
                         <button onclick="openAddProductModal()"
                             class="bg-purple-600 text-white w-11 h-11 rounded-2xl hover:bg-purple-700 shadow-sm flex items-center justify-center transition-all active:scale-95 shrink-0"
                             title="เพิ่มสินค้าใหม่"><i class="fa-solid fa-plus"></i></button>
+                        <button onclick="openFuelStockAdjustModal()"
+                            class="bg-amber-500 text-white px-3 md:px-4 h-11 rounded-2xl hover:bg-amber-600 shadow-sm text-sm font-bold transition-all active:scale-95 shrink-0 flex items-center gap-1.5"
+                            title="วัดถัง / ปรับยอดน้ำมันคงเหลือตามจริง"><i class="fa-solid fa-ruler-vertical"></i> <span>วัดถังน้ำมัน</span></button>
                         <button onclick="openCapitalExpenseModal()"
                             class="bg-white text-purple-700 px-3 md:px-4 h-11 rounded-2xl hover:bg-purple-50 border border-purple-100 shadow-sm text-sm font-bold transition-all shrink-0 flex items-center gap-2"
                             title="ใช้เงินทุนอื่นๆ"><i class="fa-solid fa-screwdriver-wrench"></i> <span class="hidden md:inline">อื่นๆ</span></button>
@@ -826,14 +829,19 @@
             </div>
 
             <div id="content-fueltest" class="hidden flex-1 overflow-y-auto pb-24 md:pb-0 p-4 md:p-8">
-                <div class="flex justify-between items-center mb-6 max-w-xl mx-auto">
+                <div class="flex flex-wrap justify-between items-center gap-3 mb-6 max-w-xl mx-auto">
                     <div>
                         <h2 class="text-2xl font-bold text-slate-800">🔬 ทดสอบน้ำมัน</h2>
                         <p class="text-xs text-slate-400">บีบน้ำมันออกจากหัวจ่ายแล้วเอากลับเข้าถัง (ไม่คิดเงิน)</p>
                     </div>
-                    <button onclick="openFuelTestHistory()"
-                        class="bg-white text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 border border-slate-200 shadow-sm text-sm font-bold transition-all"><i
-                            class="fa-solid fa-list mr-1.5 text-teal-500"></i> รายการวันนี้</button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openFuelStockAdjustModal()"
+                            class="bg-amber-500 text-white px-4 py-2 rounded-xl hover:bg-amber-600 shadow-sm text-sm font-bold transition-all active:scale-95 flex items-center gap-1.5"><i
+                                class="fa-solid fa-ruler-vertical"></i> วัดถังปรับสต็อก</button>
+                        <button onclick="openFuelTestHistory()"
+                            class="bg-white text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 border border-slate-200 shadow-sm text-sm font-bold transition-all"><i
+                                class="fa-solid fa-list mr-1.5 text-teal-500"></i> รายการวันนี้</button>
+                    </div>
                 </div>
                 <div class="max-w-xl mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-soft border border-slate-100">
                     <div class="space-y-6">
@@ -1441,6 +1449,112 @@
             <button onclick="submitCapitalBalanceReset()"
                 class="w-full mt-6 bg-gradient-to-r from-cyan-600 to-sky-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-cyan-200 active:scale-95 transition-transform"><i
                     class="fa-solid fa-save mr-2"></i>บันทึกยอดตั้งต้น</button>
+        </div>
+    </div>
+
+    <!-- Modal: วัดถัง / ปรับยอดน้ำมันตามจริง (Fuel Stock Reconciliation) -->
+    <div id="fuel-stock-adjust-modal"
+        class="hidden fixed inset-0 z-[93] flex items-end md:items-center justify-center modal-overlay p-0 md:p-4">
+        <div
+            class="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-xl max-h-[92vh] overflow-y-auto shadow-2xl scale-up-center">
+            <div class="sticky top-0 bg-white z-10 px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                        <i class="fa-solid fa-ruler-vertical text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-lg">วัดถัง / ปรับยอดน้ำมันตามจริง</h3>
+                        <p class="text-xs text-slate-400">ปรับจำนวนลิตรคงเหลือให้ตรงกับที่วัดถังจริง (ไม่กระทบยอดขาย/เงินสด)</p>
+                    </div>
+                </div>
+                <button onclick="closeFuelStockAdjustModal()"
+                    class="w-9 h-9 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="p-5 space-y-4">
+                <!-- เลือกชนิดน้ำมัน -->
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 uppercase block mb-2">1. เลือกชนิดน้ำมันที่วัดถัง</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" id="fa-type-gas95" onclick="selectFuelAdjustType('gas95')"
+                            class="p-3.5 rounded-2xl border-2 border-orange-500 bg-orange-50 text-orange-700 font-bold flex items-center justify-center gap-2 transition shadow-sm">
+                            <i class="fa-solid fa-gas-pump text-lg"></i>
+                            <div class="text-left">
+                                <div class="text-sm font-black leading-tight">เบนซิน 95</div>
+                                <div id="fa-card-stock-gas95" class="text-[11px] font-semibold opacity-80">คงเหลือ - ลิตร</div>
+                            </div>
+                        </button>
+                        <button type="button" id="fa-type-diesel" onclick="selectFuelAdjustType('diesel')"
+                            class="p-3.5 rounded-2xl border-2 border-slate-200 bg-white text-slate-500 font-bold flex items-center justify-center gap-2 transition hover:bg-slate-50">
+                            <i class="fa-solid fa-truck-droplet text-lg"></i>
+                            <div class="text-left">
+                                <div class="text-sm font-black leading-tight">ดีเซล</div>
+                                <div id="fa-card-stock-diesel" class="text-[11px] font-semibold opacity-80">คงเหลือ - ลิตร</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- เปรียบเทียบยอดในระบบ vs วัดจริง -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+                        <div class="text-xs font-bold text-slate-400 uppercase">ยอดคงเหลือในระบบตอนนี้</div>
+                        <div class="mt-1 flex items-baseline justify-between">
+                            <span id="fa-system-qty" class="text-2xl font-black text-slate-700">0.00</span>
+                            <span class="text-xs font-bold text-slate-400">ลิตร</span>
+                        </div>
+                    </div>
+                    <div class="bg-amber-50/70 border-2 border-amber-300 rounded-2xl p-3.5">
+                        <label for="fa-actual-qty" class="text-xs font-bold text-amber-700 uppercase block">2. ยอดที่วัดถังได้จริง (ลิตร)</label>
+                        <input type="number" id="fa-actual-qty" step="0.01" min="0"
+                            oninput="calcFuelStockAdjustDiff()"
+                            class="w-full mt-1 bg-white px-3 py-2 border border-amber-300 rounded-xl text-right font-black text-2xl text-amber-700 focus:ring-2 focus:ring-amber-200 outline-none"
+                            placeholder="0.00">
+                    </div>
+                </div>
+
+                <!-- แสดงผลต่าง / ยอดระเหย -->
+                <div id="fa-diff-box" class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between">
+                    <div>
+                        <div class="text-xs font-bold text-slate-500">ส่วนต่างจากการวัดถัง (วัดจริง - ในระบบ)</div>
+                        <div id="fa-diff-desc" class="text-[11px] text-slate-400 mt-0.5">กรอกยอดลิตรที่วัดได้จริงเพื่อคำนวณยอดระเหย/คลาดเคลื่อน</div>
+                    </div>
+                    <div class="text-right">
+                        <div id="fa-diff-display" class="text-xl font-black text-slate-600">0.00 ลิตร</div>
+                        <span id="fa-diff-badge" class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">ตรงกัน</span>
+                    </div>
+                </div>
+
+                <!-- หมายเหตุ -->
+                <div>
+                    <label for="fa-note" class="text-xs font-bold text-slate-400 ml-1 uppercase block mb-1">หมายเหตุ (เช่น วัดถังประจำสัปดาห์ / น้ำมันระเหย)</label>
+                    <input type="text" id="fa-note"
+                        class="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 text-sm focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none"
+                        placeholder="เช่น วัดถังจริง น้ำมันระเหยตามอุณหภูมิ">
+                </div>
+
+                <div class="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-xs text-amber-800 leading-relaxed">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    <strong>แบบที่ 1:</strong> ระบบจะปรับเฉพาะจำนวนลิตรคงเหลือในถังให้ตรงตามจริง และเก็บประวัติส่วนต่าง/การระเหยไว้ตรวจสอบ โดย<strong>ไม่หักเงินสด ไม่กระทบยอดขายรายวัน และไม่หักกำไร/เงินทุน</strong>
+                </div>
+
+                <button type="button" id="btn-fa-save" onclick="submitFuelStockAdjust()"
+                    class="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-amber-200 active:scale-95 transition-transform">
+                    <i class="fa-solid fa-check-circle mr-2"></i>บันทึกปรับยอดน้ำมันตามจริง
+                </button>
+
+                <!-- ประวัติการวัดถัง/ปรับยอดล่าสุด -->
+                <div class="pt-3 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-bold text-slate-500 uppercase"><i class="fa-solid fa-clock-rotate-left mr-1"></i>ประวัติการวัดถัง / ปรับยอดล่าสุด</h4>
+                        <button type="button" onclick="loadFuelStockAdjustHistory()" class="text-xs text-amber-600 hover:underline font-bold">รีเฟรช</button>
+                    </div>
+                    <div id="fa-history-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        <div class="text-center py-4 text-xs text-slate-400">กำลังโหลดประวัติ...</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -3275,11 +3389,16 @@
                 const unit = String(p.unit || 'หน่วย');
                 const img = p.img || 'https://placehold.co/150x150?text=No+Img';
                 const price = Number(p.price) || 0;
+                const stock = Number(p.stock) || 0;
+                const stockText = stock.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                 const isFuel = category === 'น้ำมันเชื้อเพลิง';
+                const fuelKey = isFuel ? (name.includes('95') ? 'gas95' : 'diesel') : '';
                 const borderClass = isFuel ? 'border-orange-200 ring-1 ring-orange-50' : 'border-slate-200';
                 const inStock = stockList.find(s => s.productName === name);
-                let stockBadge = inStock ? `<span class="absolute top-2 right-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm z-10"><i class="fa-solid fa-check mr-0.5"></i> เพิ่มแล้ว</span>` : '';
-                if (isFuel) stockBadge += `<span class="absolute top-2 ${inStock ? 'top-8' : 'top-2'} left-2 bg-orange-100 text-orange-600 w-6 h-6 rounded-full flex items-center justify-center shadow-sm z-10"><i class="fa-solid fa-gas-pump text-[10px]"></i></span>`;
+                let stockBadge = inStock
+                    ? `<span class="absolute top-2 right-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm z-10"><i class="fa-solid fa-check mr-0.5"></i> เพิ่มแล้ว</span>`
+                    : `<span class="absolute top-2 right-2 ${isFuel ? 'bg-orange-500' : 'bg-slate-600'} text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm z-10">${stockText} ${escapeHtml(unit)}</span>`;
+                if (isFuel) stockBadge += `<span class="absolute top-2 left-2 bg-orange-100 text-orange-600 w-6 h-6 rounded-full flex items-center justify-center shadow-sm z-10"><i class="fa-solid fa-gas-pump text-[10px]"></i></span>`;
 
                 return `<div onclick="openStockModal('${p.id}')" class="bg-white ${borderClass} rounded-2xl shadow-sm hover:shadow-md active:scale-95 transition-all duration-200 relative overflow-hidden group cursor-pointer border flex flex-col">
                     ${stockBadge}
@@ -3288,8 +3407,11 @@
                     </div>
                     <div class="p-2 md:p-3 flex-1 flex flex-col justify-center w-full min-w-0">
                         <h4 class="font-bold text-slate-700 text-xs md:text-sm line-clamp-1 mb-1">${escapeHtml(name)}</h4>
-                        <div class="text-xs text-slate-400 bg-slate-100/80 inline-block px-2 py-0.5 rounded-md w-fit">หน่วย: ${escapeHtml(unit)}</div>
-                        <div class="text-xs font-bold text-indigo-600 mt-1">ขาย ${price.toFixed(2)} บ.</div>
+                        <div class="text-xs text-slate-400 bg-slate-100/80 inline-block px-2 py-0.5 rounded-md w-fit">คงเหลือ: ${stockText} ${escapeHtml(unit)}</div>
+                        <div class="flex items-center justify-between gap-1 mt-1.5">
+                            <span class="text-xs font-bold text-indigo-600">ขาย ${price.toFixed(2)} บ.</span>
+                            ${isFuel ? `<button type="button" onclick="event.stopPropagation(); openFuelStockAdjustModal('${fuelKey}')" class="text-[11px] font-bold bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white border border-amber-200 px-2 py-0.5 rounded-lg transition flex items-center gap-1"><i class="fa-solid fa-ruler-vertical"></i> วัดถัง</button>` : ''}
+                        </div>
                     </div>
                 </div>`;
             }).join('');
@@ -4300,7 +4422,287 @@
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('keyup', e => { if (e.key === 'Enter') submitFuelTest(); });
             });
+            ['fa-actual-qty', 'fa-note'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('keyup', e => { if (e.key === 'Enter') submitFuelStockAdjust(); });
+            });
         });
+
+        // ===== วัดถัง / ปรับยอดน้ำมันตามจริง (Fuel Stock Reconciliation - แบบที่ 1) =====
+        let currentFuelAdjustType = 'gas95';
+
+        function getFuelItemByAdjustType(type) {
+            const list = Array.isArray(fuels) ? fuels : [];
+            if (type === 'diesel') {
+                return list.find(f => String(f.name || '').includes('ดีเซล')) || list[1] || null;
+            }
+            return list.find(f => String(f.name || '').includes('เบนซิน') || String(f.name || '').includes('95')) || list[0] || null;
+        }
+
+        function refreshFuelAdjustCardBadges() {
+            const gasItem = getFuelItemByAdjustType('gas95');
+            const dieselItem = getFuelItemByAdjustType('diesel');
+            const gasEl = document.getElementById('fa-card-stock-gas95');
+            const dieselEl = document.getElementById('fa-card-stock-diesel');
+            if (gasEl && gasItem) {
+                const q = Number(gasItem.stock || 0);
+                gasEl.innerText = `คงเหลือ ${q.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ลิตร`;
+            }
+            if (dieselEl && dieselItem) {
+                const q = Number(dieselItem.stock || 0);
+                dieselEl.innerText = `คงเหลือ ${q.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ลิตร`;
+            }
+        }
+
+        function openFuelStockAdjustModal(defaultType) {
+            refreshFuelAdjustCardBadges();
+            const type = (defaultType === 'diesel' || defaultType === 'gas95') ? defaultType : (currentFuelAdjustType || 'gas95');
+            selectFuelAdjustType(type);
+            const noteEl = document.getElementById('fa-note');
+            if (noteEl) noteEl.value = '';
+            document.getElementById('fuel-stock-adjust-modal').classList.remove('hidden');
+            loadFuelStockAdjustHistory();
+            setTimeout(() => {
+                const input = document.getElementById('fa-actual-qty');
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 80);
+        }
+
+        function closeFuelStockAdjustModal() {
+            document.getElementById('fuel-stock-adjust-modal').classList.add('hidden');
+        }
+
+        function selectFuelAdjustType(type) {
+            currentFuelAdjustType = type === 'diesel' ? 'diesel' : 'gas95';
+            const btnGas = document.getElementById('fa-type-gas95');
+            const btnDiesel = document.getElementById('fa-type-diesel');
+            if (btnGas && btnDiesel) {
+                if (currentFuelAdjustType === 'gas95') {
+                    btnGas.className = "p-3.5 rounded-2xl border-2 border-orange-500 bg-orange-50 text-orange-700 font-bold flex items-center justify-center gap-2 transition shadow-sm";
+                    btnDiesel.className = "p-3.5 rounded-2xl border-2 border-slate-200 bg-white text-slate-500 font-bold flex items-center justify-center gap-2 transition hover:bg-slate-50";
+                } else {
+                    btnDiesel.className = "p-3.5 rounded-2xl border-2 border-blue-500 bg-blue-50 text-blue-700 font-bold flex items-center justify-center gap-2 transition shadow-sm";
+                    btnGas.className = "p-3.5 rounded-2xl border-2 border-slate-200 bg-white text-slate-500 font-bold flex items-center justify-center gap-2 transition hover:bg-slate-50";
+                }
+            }
+            const fuelItem = getFuelItemByAdjustType(currentFuelAdjustType);
+            const sysQty = Number(fuelItem?.stock || 0);
+            const sysEl = document.getElementById('fa-system-qty');
+            if (sysEl) {
+                sysEl.innerText = sysQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+            }
+            const actualEl = document.getElementById('fa-actual-qty');
+            if (actualEl) {
+                actualEl.value = sysQty.toFixed(2);
+            }
+            calcFuelStockAdjustDiff();
+        }
+
+        function calcFuelStockAdjustDiff() {
+            const fuelItem = getFuelItemByAdjustType(currentFuelAdjustType);
+            const sysQty = Number(fuelItem?.stock || 0);
+            const rawVal = document.getElementById('fa-actual-qty')?.value;
+            const diffDisplay = document.getElementById('fa-diff-display');
+            const diffBadge = document.getElementById('fa-diff-badge');
+            const diffDesc = document.getElementById('fa-diff-desc');
+            const diffBox = document.getElementById('fa-diff-box');
+
+            if (rawVal === '' || rawVal === null || rawVal === undefined || isNaN(Number(rawVal))) {
+                if (diffDisplay) {
+                    diffDisplay.innerText = '0.00 ลิตร';
+                    diffDisplay.className = 'text-xl font-black text-slate-500';
+                }
+                if (diffBadge) {
+                    diffBadge.innerText = 'รอกรอกยอด';
+                    diffBadge.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600';
+                }
+                if (diffDesc) diffDesc.innerText = 'กรอกยอดลิตรที่วัดได้จริงเพื่อคำนวณยอดระเหย/คลาดเคลื่อน';
+                if (diffBox) diffBox.className = 'bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between';
+                return;
+            }
+
+            const actualQty = Number(rawVal);
+            const diff = actualQty - sysQty;
+            const sign = diff > 0 ? '+' : '';
+            const formattedDiff = `${sign}${diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร`;
+
+            if (diffDisplay) diffDisplay.innerText = formattedDiff;
+
+            if (Math.abs(diff) < 0.0005) {
+                if (diffDisplay) diffDisplay.className = 'text-xl font-black text-slate-600';
+                if (diffBadge) {
+                    diffBadge.innerText = 'ยอดตรงกับในระบบ';
+                    diffBadge.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600';
+                }
+                if (diffDesc) diffDesc.innerText = 'จำนวนลิตรที่วัดได้ตรงกับในระบบพอดี';
+                if (diffBox) diffBox.className = 'bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between';
+            } else if (diff < 0) {
+                if (diffDisplay) diffDisplay.className = 'text-xl font-black text-rose-600';
+                if (diffBadge) {
+                    diffBadge.innerText = `น้ำมันระเหย / ขาดไป ${Math.abs(diff).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร`;
+                    diffBadge.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700';
+                }
+                if (diffDesc) diffDesc.innerText = 'ระบบจะปรับลดยอดคงเหลือลงให้ตรงกับที่วัดถังได้จริง';
+                if (diffBox) diffBox.className = 'bg-rose-50/60 border border-rose-200 rounded-2xl p-3.5 flex items-center justify-between';
+            } else {
+                if (diffDisplay) diffDisplay.className = 'text-xl font-black text-emerald-600';
+                if (diffBadge) {
+                    diffBadge.innerText = `วัดได้มากกว่าในระบบ +${diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร`;
+                    diffBadge.className = 'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
+                }
+                if (diffDesc) diffDesc.innerText = 'ระบบจะปรับเพิ่มยอดคงเหลือขึ้นให้ตรงกับที่วัดถังได้จริง';
+                if (diffBox) diffBox.className = 'bg-emerald-50/60 border border-emerald-200 rounded-2xl p-3.5 flex items-center justify-between';
+            }
+        }
+
+        function submitFuelStockAdjust() {
+            const fuelItem = getFuelItemByAdjustType(currentFuelAdjustType);
+            if (!fuelItem) {
+                showStatusModal('error', 'ไม่พบข้อมูลน้ำมัน', 'กรุณารีเฟรชหน้าเว็บแล้วลองใหม่อีกครั้ง');
+                return;
+            }
+            const rawActual = document.getElementById('fa-actual-qty')?.value;
+            const actualQty = Number(rawActual);
+            if (rawActual === '' || !Number.isFinite(actualQty) || actualQty < 0) {
+                showStatusModal('error', 'ข้อมูลไม่ถูกต้อง', 'กรุณากรอกยอดน้ำมันที่วัดได้จริงเป็นตัวเลข 0 ขึ้นไป');
+                return;
+            }
+            const sysQty = Number(fuelItem.stock || 0);
+            const diff = actualQty - sysQty;
+            const note = (document.getElementById('fa-note')?.value || '').trim();
+            const diffText = `${diff > 0 ? '+' : ''}${diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร`;
+
+            showConfirmModal(
+                'ยืนยันปรับยอดน้ำมันตามจริง',
+                `ต้องการปรับยอด "${fuelItem.name}"\nจากในระบบ ${sysQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร -> เป็น ${actualQty.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร\n(ส่วนต่าง: ${diffText}) ใช่หรือไม่?`,
+                () => {
+                    const btn = document.getElementById('btn-fa-save');
+                    const oldHtml = btn ? btn.innerHTML : '';
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>กำลังบันทึก...';
+                    }
+                    google.script.run.withSuccessHandler(res => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = oldHtml;
+                        }
+                        if (res && res.status === 'success') {
+                            // Update local state immediately
+                            fuelItem.stock = Number(res.actualQty ?? actualQty);
+                            refreshFuelAdjustCardBadges();
+                            selectFuelAdjustType(currentFuelAdjustType);
+                            renderStockProducts();
+                            loadFuelStockAdjustHistory();
+                            loadDataFromSheet();
+                            const noteEl = document.getElementById('fa-note');
+                            if (noteEl) noteEl.value = '';
+                            showStatusModal(
+                                'success',
+                                'ปรับยอดน้ำมันสำเร็จ',
+                                `${res.fuelName || fuelItem.name}: ปรับเป็น ${Number(res.actualQty ?? actualQty).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ลิตร เรียบร้อยแล้ว`
+                            );
+                        } else {
+                            showStatusModal('error', 'บันทึกไม่สำเร็จ', (res && res.message) || 'เกิดข้อผิดพลาด');
+                        }
+                    }).withFailureHandler(err => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = oldHtml;
+                        }
+                        showStatusModal('error', 'เกิดข้อผิดพลาด', err.message || String(err));
+                    }).saveFuelStockAdjustment({
+                        productId: fuelItem.id,
+                        fuelType: currentFuelAdjustType,
+                        fuelName: fuelItem.name,
+                        actualQty: actualQty,
+                        note: note || (diff < 0 ? 'วัดถังปรับยอดตามจริง (น้ำมันระเหย)' : 'วัดถังปรับยอดตามจริง')
+                    });
+                }
+            );
+        }
+
+        function loadFuelStockAdjustHistory() {
+            const listEl = document.getElementById('fa-history-list');
+            if (!listEl) return;
+            listEl.innerHTML = '<div class="text-center py-4 text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i>กำลังโหลดประวัติ...</div>';
+
+            google.script.run.withSuccessHandler(rows => {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    listEl.innerHTML = '<div class="text-center py-5 text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">ยังไม่มีประวัติการวัดถังปรับยอดน้ำมัน</div>';
+                    return;
+                }
+                let html = '';
+                rows.forEach(r => {
+                    const diff = Number(r.diffQty || 0);
+                    const sign = diff > 0 ? '+' : '';
+                    const isLoss = diff < -0.0005;
+                    const isGain = diff > 0.0005;
+                    const badgeClass = isLoss
+                        ? 'bg-rose-100 text-rose-700'
+                        : (isGain ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600');
+                    const diffLabel = isLoss ? 'ระเหย/ลดลง' : (isGain ? 'เพิ่มขึ้น' : 'ตรงกัน');
+                    const fuelBadge = String(r.fuelName || '').includes('ดีเซล')
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-orange-100 text-orange-700';
+
+                    html += `
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+                        <div class="space-y-1 min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="font-bold px-2 py-0.5 rounded-md ${fuelBadge}">${r.fuelName || '-'}</span>
+                                <span class="text-slate-400 font-medium">${r.dateStr || ''}</span>
+                            </div>
+                            <div class="text-slate-600 font-semibold">
+                                ในระบบ <span class="text-slate-800 font-bold">${Number(r.systemQty || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <i class="fa-solid fa-arrow-right mx-1 text-slate-400 text-[10px]"></i>
+                                วัดจริง <span class="text-amber-700 font-black">${Number(r.actualQty || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> ลิตร
+                            </div>
+                            ${r.note ? `<div class="text-slate-400 truncate"><i class="fa-regular fa-comment-dots mr-1"></i>${r.note}</div>` : ''}
+                        </div>
+                        <div class="text-right shrink-0 flex flex-col items-end gap-1">
+                            <span class="px-2 py-0.5 rounded-full font-bold text-[11px] ${badgeClass}">
+                                ${diffLabel} ${sign}${diff.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ล.
+                            </span>
+                            <button type="button" onclick="undoFuelStockAdjust('${r.id}')" class="text-[11px] text-slate-400 hover:text-red-500 font-semibold" title="ยกเลิกรายการปรับยอดนี้และคืนยอดลิตรกลับ">
+                                <i class="fa-solid fa-rotate-left mr-0.5"></i>ยกเลิก
+                            </button>
+                        </div>
+                    </div>`;
+                });
+                listEl.innerHTML = html;
+            }).withFailureHandler(err => {
+                listEl.innerHTML = `<div class="text-center py-4 text-xs text-red-400">โหลดประวัติไม่สำเร็จ: ${err.message || err}</div>`;
+            }).getFuelStockAdjustHistory(20);
+        }
+
+        function undoFuelStockAdjust(adjustId) {
+            if (!adjustId) return;
+            showConfirmModal(
+                'ยกเลิกรายการปรับยอดน้ำมัน',
+                'ต้องการยกเลิกรายการปรับยอดนี้ และคืนจำนวนลิตรในระบบกลับไปก่อนปรับยอดใช่หรือไม่?',
+                () => {
+                    google.script.run.withSuccessHandler(res => {
+                        if (res && res.status === 'success') {
+                            loadDataFromSheet();
+                            setTimeout(() => {
+                                refreshFuelAdjustCardBadges();
+                                selectFuelAdjustType(currentFuelAdjustType);
+                                loadFuelStockAdjustHistory();
+                            }, 350);
+                            showStatusModal('success', 'ยกเลิกรายการสำเร็จ', 'คืนยอดน้ำมันกลับสู่ระบบเรียบร้อยแล้ว');
+                        } else {
+                            showStatusModal('error', 'ยกเลิกไม่สำเร็จ', (res && res.message) || 'เกิดข้อผิดพลาด');
+                        }
+                    }).withFailureHandler(err => {
+                        showStatusModal('error', 'เกิดข้อผิดพลาด', err.message || String(err));
+                    }).deleteFuelStockAdjustment(adjustId);
+                }
+            );
+        }
 
         function closeCopyReportModal() {
             document.getElementById('copy-report-modal').classList.add('hidden');
