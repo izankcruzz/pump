@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20261019-fuel-stock-adjust-v95"></script>
+    <script src="./supabase-adapter.js?v=20261105-debt-cash-basis-v96"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -323,6 +323,7 @@
                         </div>
                         <div class="text-2xl md:text-3xl font-black text-slate-900 leading-tight" id="dash-capital">...</div>
                         <div id="dash-capital-detail" class="mt-2 text-[11px] leading-snug text-slate-500">...</div>
+                        <div id="dash-unpaid-capital-box" class="hidden mt-2 rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-2 text-[11px] leading-snug text-amber-800"></div>
                         <div class="mt-3 pt-3 border-t border-cyan-100">
                             <div class="flex items-center justify-between gap-2 mb-3">
                                 <div class="text-sm font-black text-slate-700">กำไรคงเหลือเดือนนี้</div>
@@ -810,10 +811,11 @@
                                 <button onclick="fillDebtPaymentFull()"
                                     class="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100">เต็มจำนวน</button>
                             </div>
-                            <input type="number" id="debt-payment-amount"
+                            <input type="number" id="debt-payment-amount" oninput="updateDebtPaymentPreview()"
                                 class="w-full p-4 mt-1 border border-emerald-200 rounded-2xl text-right font-black text-3xl text-emerald-600 bg-emerald-50/40 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400"
                                 placeholder="0.00" step="0.01">
                         </div>
+                        <div id="debt-payment-breakdown" class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs space-y-1.5"></div>
                         <div>
                             <label class="text-xs font-bold text-slate-400 ml-1 uppercase">หมายเหตุ</label>
                             <input type="text" id="debt-payment-note"
@@ -2443,9 +2445,14 @@
 
             body.innerHTML = list.map(item => {
                 const amount = Math.round(item.amount || 0).toLocaleString('th-TH');
+                const costTotal = Math.round(Number(item.costTotal) || 0).toLocaleString('th-TH');
+                const profit = Math.round(Number(item.profit) || 0).toLocaleString('th-TH');
                 const detail = item.item
-                    ? `${escapeHtml(item.item)}${item.qty ? ` x${formatQty(item.qty, item.unit || '')}` : ''}`
+                    ? `${escapeHtml(item.item)}${item.qty ? ` x${formatQty(item.qty, item.unit || '')}` : ''}${item.debtDate && tone === 'repaid' ? ` (หนี้ ${escapeHtml(item.debtDate)})` : ''}`
                     : (item.debtDate ? `หนี้วันที่ ${escapeHtml(item.debtDate)}` : '');
+                const breakdown = tone === 'repaid'
+                    ? `<div class="text-[11px] text-teal-700 font-semibold mt-0.5">คืนทุน +${costTotal} ฿ | กำไร +${profit} ฿</div>`
+                    : `<div class="text-[11px] text-amber-700 font-semibold mt-0.5">พักทุน ${costTotal} ฿ | พักกำไร ${profit} ฿</div>`;
                 return `<div class="rounded-xl border ${style.border} ${style.bg} p-3">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0 flex gap-2">
@@ -2453,6 +2460,7 @@
                             <div class="min-w-0">
                                 <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div>
                                 ${detail ? `<div class="text-xs text-slate-500 mt-0.5 truncate">${detail}</div>` : ''}
+                                ${breakdown}
                             </div>
                         </div>
                         <div class="text-xs font-bold ${style.text} text-right shrink-0">${amount} บาท</div>
@@ -2505,24 +2513,74 @@
             if (repaidTotalEl) repaidTotalEl.innerText = `${Math.round(data.repaidTotal || 0).toLocaleString('th-TH')} บาท`;
         }
 
+        function updateDashUnpaidCapitalBox(summary) {
+            const box = document.getElementById('dash-unpaid-capital-box');
+            if (!box) return;
+            const unpaidTotal = Number(summary && summary.unpaidDebtTotal) || 0;
+            const unpaidCapital = Number(summary && summary.unpaidDebtCapital) || 0;
+            const unpaidProfit = Number(summary && summary.unpaidDebtProfit) || 0;
+            if (unpaidTotal > 0.009) {
+                const fmt0 = v => Math.round(v).toLocaleString('th-TH');
+                box.innerHTML = `<div><span class="font-bold">ลูกหนี้ค้างสะสมรอเก็บ:</span> ${fmt0(unpaidTotal)} บาท</div>
+                    <div class="mt-0.5 text-amber-700">ทุนจมอยู่ในลูกหนี้ <span class="font-bold">${fmt0(unpaidCapital)} ฿</span> | กำไรรอเก็บ <span class="font-bold">${fmt0(unpaidProfit)} ฿</span></div>`;
+                box.classList.remove('hidden');
+            } else {
+                box.innerHTML = '';
+                box.classList.add('hidden');
+            }
+        }
+
         function renderDashboardDailyLists(data) {
             const lists = (data && data.lists) || {};
+            const summary = (data && data.summary) || {};
             const salesList = Array.isArray(lists.sales) ? lists.sales : [];
             const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-            const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
-            const salesCapital = salesTotal - salesProfit;
-            const salesCapitalNet = salesCapital + Number(data && data.summary && data.summary.walletUsed || 0) - Number(data && data.summary && data.summary.stockPaid || 0);
+            const salesProfitGross = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
+            const salesCapitalGross = salesTotal - salesProfitGross;
+            const effectiveSalesCapital = Number.isFinite(Number(summary.capitalReturned))
+                ? Number(summary.capitalReturned)
+                : salesCapitalGross;
+            const effectiveSalesProfit = Number.isFinite(Number(summary.profit))
+                ? Number(summary.profit)
+                : salesProfitGross;
+            const salesCapitalNet = effectiveSalesCapital + Number(summary.walletUsed || 0) - Number(summary.stockPaid || 0);
             setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
             setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
             setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapitalNet).toLocaleString('th-TH')} บาท`);
             const salesProfitEl = document.getElementById('list-sales-profit');
             if (salesProfitEl) {
-                salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
-                salesProfitEl.className = `text-[15px] ${salesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
+                salesProfitEl.innerText = `กำไร ${Math.round(effectiveSalesProfit).toLocaleString('th-TH')} บาท`;
+                salesProfitEl.className = `text-[15px] ${effectiveSalesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
             }
             const salesBody = document.getElementById('list-sales-body');
             if (salesBody) {
-                if (salesList.length === 0) {
+                const debtCapitalHeld = Number(summary.debtCapitalHeld) || 0;
+                const debtProfitHeld = Number(summary.debtProfitHeld) || 0;
+                const debtCapitalRepaid = Number(summary.debtCapitalRepaid) || 0;
+                const debtProfitRepaid = Number(summary.debtProfitRepaid) || 0;
+                const hasCashBasisAdjust = debtCapitalHeld > 0.009 || debtCapitalRepaid > 0.009 || Math.abs(debtProfitHeld) > 0.009 || Math.abs(debtProfitRepaid) > 0.009;
+                const cashBasisNoteHtml = hasCashBasisAdjust ? `
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1 mt-2">
+                        <div class="font-bold text-slate-700 mb-1">สรุปทุนและกำไรตามเงินสดรับจริง</div>
+                        <div class="flex justify-between text-slate-600">
+                            <span>ทุนขายตามมิเตอร์ / กำไรตามมิเตอร์</span>
+                            <span class="font-semibold">${Math.round(salesCapitalGross).toLocaleString('th-TH')} / ${Math.round(salesProfitGross).toLocaleString('th-TH')} ฿</span>
+                        </div>
+                        ${debtCapitalHeld > 0.009 || Math.abs(debtProfitHeld) > 0.009 ? `<div class="flex justify-between text-amber-700">
+                            <span>- พักค้างชำระ (ยังไม่รับเงินสด)</span>
+                            <span class="font-semibold">ทุน -${Math.round(debtCapitalHeld).toLocaleString('th-TH')} | กำไร -${Math.round(debtProfitHeld).toLocaleString('th-TH')} ฿</span>
+                        </div>` : ''}
+                        ${debtCapitalRepaid > 0.009 || Math.abs(debtProfitRepaid) > 0.009 ? `<div class="flex justify-between text-teal-700">
+                            <span>+ รับชำระหนี้ (เงินสดเข้าวันนี้)</span>
+                            <span class="font-semibold">ทุน +${Math.round(debtCapitalRepaid).toLocaleString('th-TH')} | กำไร +${Math.round(debtProfitRepaid).toLocaleString('th-TH')} ฿</span>
+                        </div>` : ''}
+                        <div class="flex justify-between font-bold text-slate-800 pt-1 border-t border-slate-200">
+                            <span>= ทุนคืนรับจริง / กำไรขายรับจริง</span>
+                            <span>${Math.round(effectiveSalesCapital).toLocaleString('th-TH')} / ${Math.round(effectiveSalesProfit).toLocaleString('th-TH')} ฿</span>
+                        </div>
+                    </div>` : '';
+
+                if (salesList.length === 0 && !hasCashBasisAdjust) {
                     salesBody.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>';
                 } else {
                     const groupedSalesList = Array.from(salesList.reduce((map, item) => {
@@ -2556,7 +2614,7 @@
                                 </div>
                             </div>
                         </div>`;
-                    }).join('') + '</div>';
+                    }).join('') + cashBasisNoteHtml + '</div>';
                 }
             }
 
@@ -2567,7 +2625,20 @@
             if (repayBodyEl) {
                 repayBodyEl.innerHTML = repayList.length === 0
                     ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการชำระ</div>'
-                    : '<div class="space-y-2">' + repayList.map(item => `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-teal-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div><div class="text-xs text-slate-400">หนี้วันที่: ${escapeHtml(item.debtDate)}</div></div><div class="font-bold text-teal-600 text-sm">+${Number(item.amount || 0).toLocaleString()} บาท</div></div>`).join('') + '</div>';
+                    : '<div class="space-y-2">' + repayList.map(item => {
+                        const costTotal = Math.round(Number(item.costTotal) || 0).toLocaleString('th-TH');
+                        const profit = Math.round(Number(item.profit) || 0).toLocaleString('th-TH');
+                        const itemLabel = item.item ? `<div class="text-xs text-slate-500 truncate">${escapeHtml(item.item)}</div>` : '';
+                        return `<div class="flex justify-between items-start bg-white p-3 rounded-xl border border-teal-100 shadow-sm">
+                            <div class="flex-1 min-w-0 pr-2">
+                                <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div>
+                                ${itemLabel}
+                                <div class="text-xs text-slate-400">หนี้วันที่: ${escapeHtml(item.debtDate)}</div>
+                                <div class="text-[11px] font-semibold text-teal-600 mt-0.5">คืนทุน +${costTotal} ฿ | กำไร +${profit} ฿</div>
+                            </div>
+                            <div class="font-bold text-teal-600 text-sm shrink-0">+${Number(item.amount || 0).toLocaleString('th-TH')} บาท</div>
+                        </div>`;
+                    }).join('') + '</div>';
             }
 
             const expList = Array.isArray(lists.expenses) ? lists.expenses : [];
@@ -2591,7 +2662,18 @@
             if (debtBody) {
                 debtBody.innerHTML = debtList.length === 0
                     ? '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการค้าง</div>'
-                    : '<div class="space-y-2">' + debtList.map(item => `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-orange-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div><div class="text-xs text-slate-400 truncate">${escapeHtml(item.item)} x${(Number(item.qty) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div></div><div class="font-bold text-orange-500 text-sm">${Number(item.amount || 0).toLocaleString()} บาท</div></div>`).join('') + '</div>';
+                    : '<div class="space-y-2">' + debtList.map(item => {
+                        const costTotal = Math.round(Number(item.costTotal) || 0).toLocaleString('th-TH');
+                        const profit = Math.round(Number(item.profit) || 0).toLocaleString('th-TH');
+                        return `<div class="flex justify-between items-start bg-white p-3 rounded-xl border border-orange-100 shadow-sm">
+                            <div class="flex-1 min-w-0 pr-2">
+                                <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.customer)}</div>
+                                <div class="text-xs text-slate-400 truncate">${escapeHtml(item.item)} x${(Number(item.qty) || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                <div class="text-[11px] font-semibold text-amber-700 mt-0.5">พักทุน ${costTotal} ฿ | พักกำไร ${profit} ฿ (รอคิดเมื่อรับชำระ)</div>
+                            </div>
+                            <div class="font-bold text-orange-500 text-sm shrink-0">${Number(item.amount || 0).toLocaleString('th-TH')} บาท</div>
+                        </div>`;
+                    }).join('') + '</div>';
             }
 
             const fuelTestList = Array.isArray(lists.fuelTests) ? lists.fuelTests : [];
@@ -2619,6 +2701,7 @@
             setTextIfExists('dash-profit-balance', "...");
             setTextIfExists('dash-capital-detail', "...");
             setTextIfExists('dash-capital-day-detail', "...");
+            updateDashUnpaidCapitalBox(null);
             ['list-sales-body', 'list-expenses-body', 'list-debt-body', 'list-repay-body', 'list-fueltest-body'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">กำลังโหลด...</div>'; });
             setMonthlyOilSummaryLoading();
 
@@ -2651,6 +2734,7 @@
                 const dailyCapitalNet = Number(data.summary.capitalReturned || 0) + Number(data.summary.walletUsed || 0) - Number(data.summary.stockPaid || 0);
                 setTextIfExists('dash-capital', fmt0(data.summary.capitalBalance));
                 setTextIfExists('dash-capital-detail', `ทุนสุทธิ ${fmt0(dailyCapitalNet)} | ทุนเข้า ${fmt0(data.summary.capitalReturned)} | ซื้อ ${fmt0(data.summary.stockPaid)} | นำเข้า ${fmt0(data.summary.capitalManualIn || 0)} | นำออก ${fmt0(data.summary.capitalManualOut || 0)}`);
+                updateDashUnpaidCapitalBox(data.summary);
                 setTextIfExists('dash-capital-day', fmt0(dailyCapitalNet));
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
@@ -2685,6 +2769,7 @@
             setTextIfExists('dash-profit-balance', "...");
             setTextIfExists('dash-capital-detail', "...");
             setTextIfExists('dash-capital-day-detail', "...");
+            updateDashUnpaidCapitalBox(null);
             renderDashMoneyDetails(null, null);
             ['list-sales-body', 'list-expenses-body', 'list-debt-body', 'list-repay-body', 'list-fueltest-body'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">กำลังโหลด...</div>'; });
             [
@@ -2757,6 +2842,7 @@
                 const dailyCapitalNet = Number(data.summary.capitalReturned || 0) + Number(data.summary.walletUsed || 0) - Number(data.summary.stockPaid || 0);
                 setTextIfExists('dash-capital', data.summary.capitalBalance.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-capital-detail', `ทุนสุทธิ ${dailyCapitalNet.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ทุนเข้า ${data.summary.capitalReturned.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | ซื้อ ${data.summary.stockPaid.toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำเข้า ${(data.summary.capitalManualIn || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} | นำออก ${(data.summary.capitalManualOut || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`);
+                updateDashUnpaidCapitalBox(data.summary);
                 setTextIfExists('dash-capital-day', dailyCapitalNet.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
                 setTextIfExists('dash-capital-day-detail', formatCapitalPurchaseNote(data));
                 setTextIfExists('dash-repaid', (data.summary.debtRepaid || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท');
@@ -2764,115 +2850,7 @@
                 renderDashMoneyDetails(data.summary, data.monthlyOilSummary);
                 renderChart(data.chart.labels, data.chart.data);
                 renderMonthlyOilSummary(data.monthlyOilSummary);
-
-                const salesList = data.lists.sales;
-                const salesTotal = salesList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-                const salesProfit = salesList.reduce((sum, item) => sum + (Number(item.profit) || 0), 0);
-                const salesCapital = salesTotal - salesProfit;
-                const salesCapitalNet = salesCapital + Number(data && data.summary && data.summary.walletUsed || 0) - Number(data && data.summary && data.summary.stockPaid || 0);
-                setDashCountAndTotal('list-sales-count', 'list-sales-total', salesList.length, salesTotal);
-                setTextIfExists('list-sales-total', `รวม ${Math.round(salesTotal).toLocaleString('th-TH')} บาท`);
-                setTextIfExists('list-sales-capital', `ทุน ${Math.round(salesCapitalNet).toLocaleString('th-TH')} บาท`);
-                const salesProfitEl = document.getElementById('list-sales-profit');
-                if (salesProfitEl) {
-                    salesProfitEl.innerText = `กำไร ${Math.round(salesProfit).toLocaleString('th-TH')} บาท`;
-                    salesProfitEl.className = `text-[15px] ${salesProfit < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} px-2 py-0.5 rounded-full font-bold`;
-                }
-                if (salesList.length === 0) { document.getElementById('list-sales-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>'; } else {
-                    const groupedSalesList = Array.from(salesList.reduce((map, item) => {
-                        const name = String(item.name || '-');
-                        const unit = String(item.unit || 'หน่วย');
-                        const key = `${name}__${unit}`;
-                        const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0 };
-                        old.qty += Number(item.qty) || 0;
-                        old.total += Number(item.total) || 0;
-                        old.profit += Number(item.profit) || 0;
-                        old.costTotal += Number(item.costTotal) || Math.max(0, (Number(item.total) || 0) - (Number(item.profit) || 0));
-                        map.set(key, old);
-                        return map;
-                    }, new Map()).values()).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-                    let html = '<div class="space-y-2">';
-                    groupedSalesList.forEach(item => {
-                        const qty = Number(item.qty) || 0;
-                        const total = Number(item.total) || 0;
-                        const profit = Number(item.profit) || 0;
-                        const profitPerUnit = qty > 0 ? profit / qty : 0;
-                        const showQty = qty.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-                        const showTotal = Math.round(total).toLocaleString('th-TH');
-                        const showProfit = Math.round(profit).toLocaleString('th-TH');
-                        const showProfitPerUnit = profitPerUnit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        const profitClass = profit < 0 ? 'text-red-600' : 'text-emerald-600';
-                        html += `<div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition">
-                            <div class="flex justify-between items-start gap-3">
-                                <div class="flex-1 min-w-0 pr-2">
-                                    <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.name)}</div>
-                                    <div class="text-xs text-slate-400">x${showQty} ${escapeHtml(item.unit || 'หน่วย')}</div>
-                                    <div class="text-xs ${profitClass} font-bold mt-1">กำไร/หน่วย ${showProfitPerUnit} บาท</div>
-                                </div>
-                                <div class="text-right shrink-0">
-                                    <div class="font-bold text-gray-600 text-sm">${showTotal} บาท</div>
-                                    <div class="text-xs ${profitClass} font-bold mt-1">รวมกำไร ${showProfit} บาท</div>
-                                </div>
-                            </div>
-                        </div>`;
-                    });
-                    html += '</div>';
-                    document.getElementById('list-sales-body').innerHTML = html;
-                }
-
-                const repayList = data.lists.repayments;
-                const repayTotal = repayList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-                const repayCountEl = document.getElementById('list-repay-count');
-                const repayBodyEl = document.getElementById('list-repay-body');
-                setDashCountAndTotal('list-repay-count', 'list-repay-total', repayList.length, repayTotal);
-                if (repayBodyEl) {
-                    if (repayList.length === 0) { repayBodyEl.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการชำระ</div>'; } else {
-                        let html = '<div class="space-y-2">';
-                        repayList.forEach(item => { html += `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-teal-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${item.customer}</div><div class="text-xs text-slate-400">หนี้วันที่: ${item.debtDate}</div></div><div class="font-bold text-teal-600 text-sm">+${item.amount.toLocaleString()} บาท</div></div>`; });
-                        html += '</div>';
-                        repayBodyEl.innerHTML = html;
-                    }
-                }
-
-                const expList = data.lists.expenses;
-                const expensesTotal = expList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-                setDashCountAndTotal('list-expenses-count', 'list-expenses-total', expList.length, expensesTotal);
-                dashboardExpenseEditCache = expList;
-                if (expList.length === 0) { document.getElementById('list-expenses-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายจ่าย</div>'; } else {
-                    let html = '<div class="space-y-2">';
-                    expList.forEach((item, editIndex) => { let icon = item.type === 'stock' ? '<i class="fa-solid fa-box text-blue-400 mr-2"></i>' : '<i class="fa-solid fa-bolt text-yellow-400 mr-2"></i>'; html += `<div class="flex justify-between items-center gap-3 bg-white p-3 rounded-xl border border-red-50 shadow-sm"><div class="text-sm text-slate-700 truncate flex-1 pr-2 flex items-center">${icon} ${escapeHtml(item.title)}</div><div class="text-right shrink-0"><div class="font-bold text-red-500 text-sm">-${Number(item.amount || 0).toLocaleString()} บาท</div><button onclick="editExpenseSummaryItem(${editIndex})" class="text-xs bg-slate-50 px-2 py-1 rounded mt-1 text-slate-500 hover:bg-indigo-500 hover:text-white transition">แก้ไข</button></div></div>`; });
-                    html += '</div>';
-                    document.getElementById('list-expenses-body').innerHTML = html;
-                }
-
-                const debtList = data.lists.debts;
-                const debtTotal = debtList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-                setDashCountAndTotal('list-debt-count', 'list-debt-total', debtList.length, debtTotal);
-                if (debtList.length === 0) { document.getElementById('list-debt-body').innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการค้าง</div>'; } else {
-                    let html = '<div class="space-y-2">';
-                    debtList.forEach(item => { let showQty = (item.qty || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); html += `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-orange-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-sm font-bold text-slate-700 truncate">${item.customer}</div><div class="text-xs text-slate-400 truncate">${item.item} x${showQty}</div></div><div class="font-bold text-orange-500 text-sm">${item.amount.toLocaleString()} บาท</div></div>`; });
-                    html += '</div>';
-                    document.getElementById('list-debt-body').innerHTML = html;
-                }
-
-                const fuelTestList = data.lists.fuelTests || [];
-                const fuelTestTotal = fuelTestList.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-                const ftCountEl = document.getElementById('list-fueltest-count');
-                const ftBodyEl = document.getElementById('list-fueltest-body');
-                setDashCountAndTotal('list-fueltest-count', 'list-fueltest-total', fuelTestList.length, fuelTestTotal, 'ลิตร');
-                if (ftBodyEl) {
-                    if (fuelTestList.length === 0) {
-                        ftBodyEl.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ไม่มีรายการทดสอบ</div>';
-                    } else {
-                        let html = '<div class="space-y-2">';
-                        fuelTestList.forEach(item => {
-                            let typeColor = item.type === 'เบนซิน 95' ? 'orange' : 'blue';
-                            html += `<div class="flex justify-between items-center bg-white p-3 rounded-xl border border-${typeColor}-100 shadow-sm"><div class="flex-1 min-w-0 pr-2"><div class="text-xs font-bold text-${typeColor}-600 bg-${typeColor}-50 px-2 py-0.5 rounded inline-block mb-1">${item.type}</div><div class="text-xs text-slate-400">${item.time}</div></div><div class="font-bold text-teal-600 text-sm">${item.qty.toFixed(2)} ลิตร</div></div>`;
-                        });
-                        html += '</div>';
-                        ftBodyEl.innerHTML = html;
-                    }
-                }
+                renderDashboardDailyLists(data);
 
                 if (icon) icon.classList.remove('fa-spin'); btn.disabled = false;
             }).withFailureHandler(err => { alert("❌ โหลดข้อมูลไม่สำเร็จ: " + err.message); if (icon) icon.classList.remove('fa-spin'); btn.disabled = false; }).getDashboardData(currentDashMode, sendDate);
@@ -3723,41 +3701,140 @@
                 renderUnpaidDebts(data.unpaid || []);
             }).getDebtPageData();
         }
-        function calcDebtPreview() { const pn = document.getElementById('debt-product').value; const amt = parseFloat(document.getElementById('debt-amount').value) || 0; const el = document.getElementById('debt-calc-preview'); if (!pn || amt <= 0) { el.innerText = ""; return; } const p = debtProducts.find(x => x.name === pn); if (p && p.price > 0) { el.innerText = `≈ ${(amt / p.price).toFixed(2)} ${p.category === 'น้ำมันเชื้อเพลิง' ? 'ลิตร' : 'ชิ้น'}`; } }
+        function calcDebtPreview() {
+            const pn = document.getElementById('debt-product').value;
+            const amt = parseFloat(document.getElementById('debt-amount').value) || 0;
+            const el = document.getElementById('debt-calc-preview');
+            if (!pn || amt <= 0) { el.innerText = ""; return; }
+            const p = debtProducts.find(x => x.name === pn);
+            if (p && p.price > 0) {
+                const qty = amt / p.price;
+                const unitLabel = p.category === 'น้ำมันเชื้อเพลิง' ? 'ลิตร' : 'ชิ้น';
+                const unitCost = Number(p.cost) || 0;
+                const costTotal = Math.round(unitCost * qty * 100) / 100;
+                const profit = Math.round((amt - costTotal) * 100) / 100;
+                el.innerText = unitCost > 0
+                    ? `≈ ${qty.toFixed(2)} ${unitLabel} (พักทุน ≈ ${costTotal.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ฿ | พักกำไร ≈ ${profit.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ฿)`
+                    : `≈ ${qty.toFixed(2)} ${unitLabel}`;
+            }
+        }
 
         function renderUnpaidDebts(d) {
             const div = document.getElementById('unpaid-list');
             unpaidDebts = d || [];
             debtPaymentGroups = [];
             if (d.length === 0) return div.innerHTML = '<div class="text-center text-green-500 py-10 flex flex-col items-center"><i class="fa-solid fa-check-circle text-4xl mb-2 opacity-20"></i><p>ไม่มีรายการค้าง</p></div>';
+            let grandTotal = 0;
+            let grandCapital = 0;
+            let grandProfit = 0;
             const g = d.reduce((acc, i) => {
-                if (!acc[i.customer]) acc[i.customer] = { items: [], total: 0 };
+                if (!acc[i.customer]) acc[i.customer] = { items: [], total: 0, capital: 0, profit: 0 };
+                const amt = Number(i.amount) || 0;
+                const cap = Number.isFinite(Number(i.costTotal)) ? Number(i.costTotal) : amt;
+                const prof = Number.isFinite(Number(i.profit)) ? Number(i.profit) : (amt - cap);
                 acc[i.customer].items.push(i);
-                acc[i.customer].total += i.amount;
+                acc[i.customer].total += amt;
+                acc[i.customer].capital += cap;
+                acc[i.customer].profit += prof;
+                grandTotal += amt;
+                grandCapital += cap;
+                grandProfit += prof;
                 return acc;
             }, {});
-            let h = '';
+            let h = `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 mb-3 text-xs text-amber-900">
+                <div class="flex justify-between items-center font-bold text-sm mb-1">
+                    <span><i class="fa-solid fa-coins mr-1 text-amber-600"></i>รวมลูกหนี้ค้างสะสมทั้งหมด</span>
+                    <span class="text-red-600 font-black">฿${Math.round(grandTotal).toLocaleString('th-TH')}</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-amber-800">
+                    <span>ทุนจมอยู่ในลูกหนี้ (จะคืนเข้าทุนเมื่อรับชำระ)</span>
+                    <span class="font-bold">฿${Math.round(grandCapital).toLocaleString('th-TH')}</span>
+                </div>
+                <div class="flex justify-between text-[11px] text-amber-800 mt-0.5">
+                    <span>กำไรรอเก็บ (จะเข้ากำไรเมื่อรับชำระ)</span>
+                    <span class="font-bold">฿${Math.round(grandProfit).toLocaleString('th-TH')}</span>
+                </div>
+            </div>`;
             for (const [c, da] of Object.entries(g)) {
-                const groupIndex = debtPaymentGroups.push({ customer: c, total: da.total, items: da.items }) - 1;
+                const groupIndex = debtPaymentGroups.push({
+                    customer: c,
+                    total: da.total,
+                    capital: da.capital,
+                    profit: da.profit,
+                    items: da.items
+                }) - 1;
                 h += `<div class="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm mb-3">
                 <div class="flex justify-between items-start border-b border-slate-50 pb-2 mb-2">
-                    <div><h4 class="font-bold text-slate-800">${escapeHtml(c)}</h4><div class="text-xs text-slate-400">${da.items.length} รายการค้าง</div></div>
+                    <div>
+                        <h4 class="font-bold text-slate-800">${escapeHtml(c)}</h4>
+                        <div class="text-xs text-slate-400">${da.items.length} รายการค้าง</div>
+                        <div class="text-[11px] text-amber-700 font-semibold mt-0.5">ทุนจม ฿${Math.round(da.capital).toLocaleString('th-TH')} | กำไรรอเก็บ ฿${Math.round(da.profit).toLocaleString('th-TH')}</div>
+                    </div>
                     <div class="text-right">
-                        <div class="text-red-500 font-bold text-lg">฿${da.total.toLocaleString()}</div>
+                        <div class="text-red-500 font-bold text-lg">฿${da.total.toLocaleString('th-TH')}</div>
                         <button onclick="openDebtPaymentModal(${groupIndex})" class="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100 mt-1 transition font-bold"><i class="fa-solid fa-hand-holding-dollar mr-1"></i> รับชำระ</button>
                     </div>
                 </div>
                 <div class="text-xs text-slate-500 space-y-1.5">
-                    ${da.items.map(i => `
-                        <div class="flex justify-between items-center">
-                            <span>${escapeHtml(i.product)} <span class="text-slate-300">(${escapeHtml(i.date)})</span></span>
-                            <span class="font-bold text-slate-700">฿${i.amount.toLocaleString()}</span>
-                        </div>
-                    `).join('')}
+                    ${da.items.map(i => {
+                        const cap = Math.round(Number(i.costTotal) || 0).toLocaleString('th-TH');
+                        const prof = Math.round(Number(i.profit) || 0).toLocaleString('th-TH');
+                        return `
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span>${escapeHtml(i.product)} <span class="text-slate-300">(${escapeHtml(i.date)})</span></span>
+                                <div class="text-[10px] text-slate-400">ทุน ฿${cap} | กำไร ฿${prof}</div>
+                            </div>
+                            <span class="font-bold text-slate-700 shrink-0">฿${Number(i.amount || 0).toLocaleString('th-TH')}</span>
+                        </div>`;
+                    }).join('')}
                 </div>
             </div>`;
             }
             div.innerHTML = h;
+        }
+
+        function updateDebtPaymentPreview() {
+            const box = document.getElementById('debt-payment-breakdown');
+            if (!box || !currentDebtPayment) return;
+            const payInput = parseFloat(document.getElementById('debt-payment-amount').value) || 0;
+            const totalDebt = Number(currentDebtPayment.total) || 0;
+            const effectivePay = Math.max(0, Math.min(payInput, totalDebt));
+            let remainingToAllocate = effectivePay;
+            let capitalRecovered = 0;
+            let profitRealized = 0;
+            const items = Array.isArray(currentDebtPayment.items) ? currentDebtPayment.items : [];
+            for (const item of items) {
+                if (remainingToAllocate <= 0.0001) break;
+                const itemAmt = Number(item.amount) || 0;
+                if (itemAmt <= 0.0001) continue;
+                const itemCap = Number.isFinite(Number(item.costTotal)) ? Number(item.costTotal) : itemAmt;
+                const itemProf = Number.isFinite(Number(item.profit)) ? Number(item.profit) : (itemAmt - itemCap);
+                const paidPortion = Math.min(remainingToAllocate, itemAmt);
+                const ratio = paidPortion / itemAmt;
+                const capPart = Math.round(itemCap * ratio * 100) / 100;
+                const profPart = Math.round((paidPortion - capPart) * 100) / 100;
+                capitalRecovered += capPart;
+                profitRealized += profPart;
+                remainingToAllocate -= paidPortion;
+            }
+            const remainingDebt = Math.max(0, totalDebt - effectivePay);
+            const fmt2 = v => (Number(v) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            box.innerHTML = `
+                <div class="font-bold text-slate-700 mb-1">เมื่อบันทึกรับชำระยอดนี้ ระบบจะคำนวณเข้าบัญชีวันนี้:</div>
+                <div class="flex justify-between text-cyan-700">
+                    <span>• คืนเข้าเงินทุนวันนี้ (ซื้อของล็อตใหม่ได้)</span>
+                    <span class="font-black">+${fmt2(capitalRecovered)} บาท</span>
+                </div>
+                <div class="flex justify-between text-emerald-700">
+                    <span>• รับรู้กำไรจากการขายวันนี้</span>
+                    <span class="font-black">+${fmt2(profitRealized)} บาท</span>
+                </div>
+                <div class="flex justify-between text-slate-500 pt-1 border-t border-slate-200">
+                    <span>ยอดค้างคงเหลือหลังชำระ</span>
+                    <span class="font-bold ${remainingDebt > 0.009 ? 'text-orange-600' : 'text-slate-700'}">${fmt2(remainingDebt)} บาท</span>
+                </div>
+            `;
         }
 
         function openDebtPaymentModal(groupIndex) {
@@ -3767,6 +3844,7 @@
             document.getElementById('payment-total').innerText = `${currentDebtPayment.total.toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`;
             document.getElementById('debt-payment-amount').value = currentDebtPayment.total.toFixed(2);
             document.getElementById('debt-payment-note').value = '';
+            updateDebtPaymentPreview();
             document.getElementById('debt-payment-modal').classList.remove('hidden');
             setTimeout(() => document.getElementById('debt-payment-amount').focus(), 100);
         }
@@ -3779,6 +3857,7 @@
         function fillDebtPaymentFull() {
             if (!currentDebtPayment) return;
             document.getElementById('debt-payment-amount').value = currentDebtPayment.total.toFixed(2);
+            updateDebtPaymentPreview();
         }
 
         function submitDebtPayment() {
@@ -4750,10 +4829,10 @@
                 ? expenses.map(item => `${item.title || '-'}: ${reportMoney(item.amount)} บาท`).join('\n')
                 : '-';
             const debtDetail = debts.length
-                ? debts.map(item => `${item.customer || '-'} ${item.item || ''} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.amount)} บาท`).join('\n')
+                ? debts.map(item => `${item.customer || '-'} ${item.item || ''} x${reportQty(item.qty, item.unit)}: ${reportMoney(item.amount)} บาท (พักทุน ${reportMoney(item.costTotal)} | พักกำไร ${reportMoney(item.profit)})`).join('\n')
                 : '-';
             const repayDetail = repayments.length
-                ? repayments.map(item => `${item.customer || '-'}: ${reportMoney(item.amount)} บาท`).join('\n')
+                ? repayments.map(item => `${item.customer || '-'}${item.debtDate ? ` (หนี้ ${item.debtDate})` : ''}: +${reportMoney(item.amount)} บาท (คืนทุน +${reportMoney(item.costTotal)} | กำไร +${reportMoney(item.profit)})`).join('\n')
                 : '-';
             const fuelTestDetail = fuelTests.length
                 ? fuelTests.map(item => `${item.type || '-'}: ${reportQty(item.qty, 'ลิตร')}`).join('\n')
@@ -4761,9 +4840,52 @@
             const capitalDetail = capitalItems.length
                 ? capitalItems.map(item => `${String(item.title || '').replace(/^ซื้อ:\s*/, 'ซื้อ: ')}${item.qty ? `\n${reportQty(item.qty, item.unit)}` : ''}\n${reportMoney(item.amount)} บาท`).join('\n\n')
                 : '-';
+            const debtCapHeld = Number(summary.debtCapitalHeld) || 0;
+            const debtProfHeld = Number(summary.debtProfitHeld) || 0;
+            const debtCapRepaid = Number(summary.debtCapitalRepaid) || 0;
+            const debtProfRepaid = Number(summary.debtProfitRepaid) || 0;
+            const unpaidTotal = Number(summary.unpaidDebtTotal) || 0;
+            const unpaidCap = Number(summary.unpaidDebtCapital) || 0;
+            const unpaidProf = Number(summary.unpaidDebtProfit) || 0;
+            const profitAdjustLines = [
+                ...(Math.abs(debtProfHeld) > 0.009 || Math.abs(debtProfRepaid) > 0.009
+                    ? [`กำไรตามมิเตอร์รวม: +${reportMoney(summary.grossSalesProfit ?? summary.profit)}`]
+                    : []),
+                ...(Math.abs(debtProfHeld) > 0.009 ? [`พักกำไรค้างชำระวันนี้: -${reportMoney(debtProfHeld)}`] : []),
+                ...(Math.abs(debtProfRepaid) > 0.009 ? [`บวกกำไรจากรับชำระหนี้: +${reportMoney(debtProfRepaid)}`] : [])
+            ];
+            const capitalAdjustLines = [
+                ...(Math.abs(debtCapHeld) > 0.009 || Math.abs(debtCapRepaid) > 0.009
+                    ? [`ทุนขายตามมิเตอร์รวม: +${reportMoney(summary.grossSalesCapital ?? summary.capitalReturned)}`]
+                    : []),
+                ...(Math.abs(debtCapHeld) > 0.009 ? [`พักทุนค้างชำระวันนี้: -${reportMoney(debtCapHeld)}`] : []),
+                ...(Math.abs(debtCapRepaid) > 0.009 ? [`คืนทุนจากรับชำระหนี้: +${reportMoney(debtCapRepaid)}`] : [])
+            ];
+            const unpaidSummaryLine = unpaidTotal > 0.009
+                ? `ลูกหนี้ค้างสะสมรอเก็บ: ${reportMoney(unpaidTotal)} บาท (ทุนจม ${reportMoney(unpaidCap)} | กำไรรอเก็บ ${reportMoney(unpaidProf)})`
+                : '';
             const title = currentDashMode === 'month'
                 ? `สรุปยอดเดือน ${label || ''}`.trim()
                 : `สรุปยอดประจำวันที่ ${label || ''}`.trim();
+            const profitSectionBody = [
+                ...profitAdjustLines,
+                `กำไรจากการขายรับจริง: +${reportMoney(summary.profit)}`,
+                `หักรายจ่าย: -${reportMoney(summary.generalExpenses)}`,
+                `กำไรสุทธิ: ${reportMoney(summary.netProfit)}`,
+                '',
+                'รายละเอียดกำไรตามมิเตอร์:',
+                profitDetail
+            ].join('\n');
+            const capitalSectionBody = [
+                ...capitalAdjustLines,
+                `ทุนคืนจากการขายรับจริง: +${reportMoney(summary.capitalReturned)}`,
+                `ใช้ซื้อสต็อก: -${reportMoney(summary.stockPaid)}`,
+                `เงินทุนสุทธิ: ${reportMoney(summary.capitalNet)}`,
+                ...(unpaidSummaryLine ? [unpaidSummaryLine] : []),
+                '',
+                'รายละเอียดใช้เงินทุน:',
+                capitalDetail
+            ].join('\n');
             const text = [
                 title,
                 '',
@@ -4772,6 +4894,7 @@
                 `เงินทุนวันนี้: ${reportMoney(summary.capitalReturned, Number(summary.capitalReturned) >= 0 ? '+' : '')}`,
                 `กำไรคงเหลือเดือนนี้: ${reportMoney(summary.monthlyProfit ?? summary.profitBalance)}`,
                 `เงินทุนคงเหลือ: ${reportMoney(summary.capitalBalance)}`,
+                ...(unpaidSummaryLine ? [unpaidSummaryLine] : []),
                 '',
                 `ยอดขายรวม: +${reportMoney(summary.sales)}`,
                 salesDetail,
@@ -4789,18 +4912,10 @@
                 fuelTestDetail,
                 '',
                 'กำไร',
-                `กำไรจากการขาย: +${reportMoney(summary.profit)}`,
-                `หักรายจ่าย: -${reportMoney(summary.generalExpenses)}`,
-                `กำไรสุทธิ: ${reportMoney(summary.netProfit)}`,
-                'รายละเอียดกำไรจากการขาย:',
-                profitDetail,
+                profitSectionBody,
                 '',
                 'เงินทุน',
-                `ทุนคืนจากการขาย: +${reportMoney(summary.capitalReturned)}`,
-                `ใช้ซื้อสต็อก: -${reportMoney(summary.stockPaid)}`,
-                `เงินทุนสุทธิ: ${reportMoney(summary.capitalNet)}`,
-                'รายละเอียดใช้เงินทุน:',
-                capitalDetail
+                capitalSectionBody
             ].join('\n');
 
             const line = (label, value, color) => `<div class="flex justify-between gap-3 text-sm py-1">
@@ -4825,14 +4940,15 @@
                     ${line('เงินทุนวันนี้', reportMoney(summary.capitalReturned, Number(summary.capitalReturned) >= 0 ? '+' : ''), 'text-cyan-600')}
                     ${line('กำไรคงเหลือเดือนนี้', reportMoney(summary.monthlyProfit ?? summary.profitBalance), 'text-violet-600')}
                     ${line('เงินทุนคงเหลือ', reportMoney(summary.capitalBalance), 'text-cyan-600')}
+                    ${unpaidTotal > 0.009 ? line('ลูกหนี้ค้างสะสม (ทุนจม / กำไรรอเก็บ)', `${reportMoney(unpaidTotal)} (${reportMoney(unpaidCap)} / ${reportMoney(unpaidProf)})`, 'text-amber-700') : ''}
                 </div>
                 ${section('bg-emerald-500', 'ยอดขายรวม', `+${reportMoney(summary.sales)}`, salesDetail)}
                 ${section('bg-teal-500', 'ยอดรับชำระหนี้', `+${reportMoney(summary.debtRepaid)}`, repayDetail)}
                 ${section('bg-rose-500', 'ยอดค่าใช้จ่าย', `-${reportMoney(summary.expenses)}`, expenseDetail)}
                 ${section('bg-orange-500', 'ยอดค้างชำระ', reportMoney(summary.debt), debtDetail)}
                 ${section('bg-blue-500', 'ทดสอบน้ำมัน', '', fuelTestDetail)}
-                ${section('bg-violet-500', 'กำไร', reportMoney(summary.netProfit), `กำไรจากการขาย: +${reportMoney(summary.profit)}\nหักรายจ่าย: -${reportMoney(summary.generalExpenses)}\nกำไรสุทธิ: ${reportMoney(summary.netProfit)}\n\nรายละเอียดกำไรจากการขาย:\n${profitDetail}`)}
-                ${section('bg-cyan-500', 'เงินทุน', reportMoney(summary.capitalNet), `ทุนคืนจากการขาย: +${reportMoney(summary.capitalReturned)}\nใช้ซื้อสต็อก: -${reportMoney(summary.stockPaid)}\nเงินทุนสุทธิ: ${reportMoney(summary.capitalNet)}\n\nรายละเอียดใช้เงินทุน:\n${capitalDetail}`)}
+                ${section('bg-violet-500', 'กำไร', reportMoney(summary.netProfit), profitSectionBody)}
+                ${section('bg-cyan-500', 'เงินทุน', reportMoney(summary.capitalNet), capitalSectionBody)}
             </div>`;
             return { html, text };
         }
@@ -4857,6 +4973,20 @@
             const dateText = currentDashMode === 'month' ? `เดือน ${label || ''}` : (label || '');
             const signed = (value) => reportMoney(value, Number(value) >= 0 ? '+' : '');
             const monthlyProfit = summary.monthlyProfit ?? summary.profitBalance ?? 0;
+            const debtCapHeld = Number(summary.debtCapitalHeld) || 0;
+            const debtProfHeld = Number(summary.debtProfitHeld) || 0;
+            const debtCapRepaid = Number(summary.debtCapitalRepaid) || 0;
+            const debtProfRepaid = Number(summary.debtProfitRepaid) || 0;
+            const baseProfitDesc = lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ขาย ${reportMoney(item.total)}บ. | กำไร ${reportMoney(item.profit)}บ.`);
+            const profitAdjustSuffix = [
+                ...(Math.abs(debtProfHeld) > 0.009 ? [`พักกำไรค้างชำระ: -${reportMoney(debtProfHeld)}บ.`] : []),
+                ...(Math.abs(debtProfRepaid) > 0.009 ? [`กำไรจากรับชำระหนี้: +${reportMoney(debtProfRepaid)}บ.`] : [])
+            ].join('\n');
+            const baseCapReturnDesc = lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ต้นทุนรวม ${reportMoney(item.costTotal || 0)}บ.`);
+            const capAdjustSuffix = [
+                ...(Math.abs(debtCapHeld) > 0.009 ? [`พักทุนค้างชำระ: -${reportMoney(debtCapHeld)}บ.`] : []),
+                ...(Math.abs(debtCapRepaid) > 0.009 ? [`คืนทุนจากรับชำระหนี้: +${reportMoney(debtCapRepaid)}บ.`] : [])
+            ].join('\n');
 
             return {
                 date: dateText,
@@ -4865,9 +4995,9 @@
                 expense: reportMoney(summary.expenses),
                 expense_desc: lineFlexTextList((lists.expenses || []).filter(item => item.type !== 'stock'), item => `${item.title || '-'}: ${reportMoney(item.amount)}บ.`),
                 profit_gross: reportMoney(summary.profit || 0),
-                profit_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ขาย ${reportMoney(item.total)}บ. | กำไร ${reportMoney(item.profit)}บ.`),
+                profit_desc: profitAdjustSuffix ? `${baseProfitDesc}\n${profitAdjustSuffix}` : baseProfitDesc,
                 capital_return: reportMoney(summary.capitalReturned || 0),
-                capital_return_desc: lineFlexTextList(sales, item => `${item.name} x${reportQty(item.qty, item.unit)}: ต้นทุนรวม ${reportMoney(item.costTotal || 0)}บ.`),
+                capital_return_desc: capAdjustSuffix ? `${baseCapReturnDesc}\n${capAdjustSuffix}` : baseCapReturnDesc,
                 capital: reportMoney(summary.stockPaid || 0),
                 capital_net: reportMoney(summary.capitalNet || 0),
                 capital_balance: reportMoney(summary.capitalBalance || 0),
@@ -4883,9 +5013,9 @@
                     return `${String(item.title || '').replace(/^ซื้อ:\s*/, 'ซื้อ: ')}${qty}: ${reportMoney(item.amount)}บ.`;
                 }),
                 debt: reportMoney(summary.debt),
-                debt_desc: lineFlexTextList(lists.debts || [], item => `${item.customer || '-'} (${item.item || '-'} x${reportQty(item.qty, item.unit)}): ${reportMoney(item.amount)}บ.`),
+                debt_desc: lineFlexTextList(lists.debts || [], item => `${item.customer || '-'} (${item.item || '-'} x${reportQty(item.qty, item.unit)}): ${reportMoney(item.amount)}บ. [พักทุน ${reportMoney(item.costTotal)} | กำไร ${reportMoney(item.profit)}]`),
                 repay: reportMoney(summary.debtRepaid),
-                repay_desc: lineFlexTextList(lists.repayments || [], item => `${item.customer || '-'}: +${reportMoney(item.amount)}บ.`),
+                repay_desc: lineFlexTextList(lists.repayments || [], item => `${item.customer || '-'}${item.debtDate ? ` (หนี้ ${item.debtDate})` : ''}: +${reportMoney(item.amount)}บ. [คืนทุน +${reportMoney(item.costTotal)} | กำไร +${reportMoney(item.profit)}]`),
                 fueltest_desc: lineFlexTextList(lists.fuelTests || [], item => `${item.type || '-'} ${reportQty(item.qty, 'ลิตร')}`),
                 cash: reportMoney(summary.cash),
                 profit: reportMoney(summary.netProfit)

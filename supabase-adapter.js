@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-10-19-fuel-stock-adjust-v95";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-11-05-debt-cash-basis-v96";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -10,12 +10,168 @@
   const LIVE_CUTOVER_DATE = "2026-06-12";
 
   let client = null;
+  let latestPurchaseHistory = [];
   let authReadyResolve;
   let authReadyReject;
   let authReady = new Promise((resolve, reject) => {
     authReadyResolve = resolve;
     authReadyReject = reject;
   });
+
+  function roundMoney2(value) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  }
+
+  async function fetchAllRows(queryFactory, pageSize = 1000) {
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await queryFactory().range(from, from + pageSize - 1);
+      if (error) throw error;
+      if (data && data.length) all.push(...data);
+      if (!data || data.length < pageSize) break;
+    }
+    return all;
+  }
+
+  function resolveUnitCostAt(productId, productName, atTs, productByName) {
+    const product = (productByName && productByName[productName])
+      || (productByName && Object.values(productByName).find(p => String(p.id) === String(productId)))
+      || {};
+    const targetMs = atTs ? new Date(atTs).getTime() : Date.now();
+    const matches = (latestPurchaseHistory || []).filter(row => {
+      const cost = Number(row.avg_cost_after || row.unit_cost || 0);
+      if (cost <= 0) return false;
+      if (productId && row.product_id && String(row.product_id) === String(productId)) return true;
+      if (productName && row.product_name && String(row.product_name) === String(productName)) return true;
+      return false;
+    });
+    if (matches.length > 0) {
+      const atOrBefore = matches.find(row => {
+        const pMs = new Date(row.purchased_at || row.created_at || 0).getTime();
+        return Number.isFinite(pMs) && pMs <= targetMs;
+      });
+      if (atOrBefore) return Number(atOrBefore.avg_cost_after || atOrBefore.unit_cost || 0);
+      const earliest = matches[matches.length - 1];
+      if (earliest) return Number(earliest.avg_cost_after || earliest.unit_cost || 0);
+    }
+    return Number(product.avg_cost || 0);
+  }
+
+  function computeDebtItemMetrics(debtRow, productByName) {
+    if (!debtRow) return { qty: 0, amount: 0, unitPrice: 0, unitCost: 0, costTotal: 0, profit: 0 };
+    const product = (productByName && productByName[debtRow.product_name])
+      || (productByName && Object.values(productByName).find(p => String(p.id) === String(debtRow.product_id)))
+      || {};
+    const amount = roundMoney2(debtRow.amount || 0);
+    const salePrice = Number(product.sale_price || 0);
+    const rawQty = Number(debtRow.qty || 0);
+    const qty = rawQty > 0 ? rawQty : (salePrice > 0 ? roundMoney2(amount / salePrice) : 0);
+    const unitPrice = qty > 0 ? roundMoney2(amount / qty) : salePrice;
+    const atTs = debtRow.debt_at || debtRow.created_at || null;
+    const unitCost = resolveUnitCostAt(debtRow.product_id || product.id, debtRow.product_name || product.name, atTs, productByName);
+    const costTotal = roundMoney2(qty * unitCost);
+    const profit = roundMoney2(amount - costTotal);
+    return { qty, amount, unitPrice, unitCost, costTotal, profit };
+  }
+
+  function restoreShiftSalesWithFuelLogs(salesRows, fuelLogs, productByName) {
+    const logById = new Map();
+    (fuelLogs || []).forEach(log => {
+      if (log && log.id && String(log.note || "").toLowerCase() !== "fuel test") {
+        logById.set(String(log.id), log);
+      }
+    });
+    return (salesRows || []).map(row => {
+      if (!row || String(row.source || "") !== "appsmith-fuel-shift") return row;
+      const log = row.fuel_log_id ? logById.get(String(row.fuel_log_id)) : null;
+      if (!log) return row;
+      const meterQty = Number(log.qty || 0);
+      const saleQty = Number(row.qty || 0);
+      if (!(meterQty > saleQty + 0.0001)) return row;
+      const product = (productByName && productByName[row.product_name]) || {};
+      const unitPrice = Number(row.unit_price || log.unit_price || product.sale_price || 0);
+      const rawUnitCost = Number(row.unit_cost_at_sale || 0);
+      const unitCost = rawUnitCost > 0
+        ? rawUnitCost
+        : resolveUnitCostAt(row.product_id || product.id, row.product_name, row.sold_at || row.created_at, productByName);
+      const total = roundMoney2(unitPrice * meterQty);
+      const costTotal = roundMoney2(unitCost * meterQty);
+      return {
+        ...row,
+        qty: meterQty,
+        total,
+        unit_cost_at_sale: unitCost,
+        cost_total: costTotal
+      };
+    });
+  }
+
+  function buildRepaymentItems(paidDebts, payments, productByName) {
+    const validPaidDebts = (paidDebts || []).filter(row => {
+      if (!row || !row.paid_at) return false;
+      if (String(row.status || "") !== "paid") return false;
+      return bkkDate(row.paid_at) >= LIVE_CUTOVER_DATE;
+    });
+    const items = validPaidDebts.map(row => {
+      const metrics = computeDebtItemMetrics(row, productByName);
+      const product = (productByName && productByName[row.product_name]) || {};
+      return {
+        id: row.id,
+        customer: row.customer_name,
+        item: row.product_name || "",
+        qty: metrics.qty,
+        unit: product.unit || "",
+        debtDate: thaiDate(row.debt_at || row.paid_at),
+        paidDate: thaiDate(row.paid_at),
+        day: bkkDate(row.paid_at),
+        amount: metrics.amount,
+        costTotal: metrics.costTotal,
+        profit: metrics.profit,
+        createdAt: row.paid_at || row.created_at || null
+      };
+    });
+
+    const paidSumByKey = new Map();
+    items.forEach(item => {
+      const key = `${normalizeDebtCustomer(item.customer)}__${item.day}`;
+      paidSumByKey.set(key, (paidSumByKey.get(key) || 0) + Number(item.amount || 0));
+    });
+
+    const paymentRowsByKey = new Map();
+    (payments || []).forEach(row => {
+      if (!row || row.note === "import paid debt") return;
+      const day = bkkDate(row.paid_at);
+      if (day < LIVE_CUTOVER_DATE) return;
+      const key = `${normalizeDebtCustomer(row.customer_name)}__${day}`;
+      if (!paymentRowsByKey.has(key)) paymentRowsByKey.set(key, []);
+      paymentRowsByKey.get(key).push(row);
+    });
+
+    paymentRowsByKey.forEach((rows, key) => {
+      const paymentSum = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+      const matchedSum = paidSumByKey.get(key) || 0;
+      const diff = roundMoney2(paymentSum - matchedSum);
+      if (diff > 0.01) {
+        const sample = rows[0];
+        items.push({
+          id: sample.id,
+          customer: sample.customer_name,
+          item: "",
+          qty: 0,
+          unit: "",
+          debtDate: thaiDate(sample.paid_at),
+          paidDate: thaiDate(sample.paid_at),
+          day: bkkDate(sample.paid_at),
+          amount: diff,
+          costTotal: diff,
+          profit: 0,
+          createdAt: sample.paid_at || sample.created_at || null
+        });
+      }
+    });
+
+    return items;
+  }
 
   function normalizeBaseUrl(url) {
     return String(url || "").trim().replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/g, "");
@@ -289,7 +445,8 @@
       if (purchaseError) throw purchaseError;
 
       const latestCost = {};
-      (purchases || []).forEach(row => {
+      latestPurchaseHistory = purchases || [];
+      latestPurchaseHistory.forEach(row => {
         const cost = Number(row.avg_cost_after || row.unit_cost || 0);
         if (cost <= 0) return;
         if (row.product_name && !latestCost[row.product_name]) latestCost[row.product_name] = cost;
@@ -618,28 +775,41 @@
   async function getDebtPageData() {
     const db = await ensureReady();
     const rows = await productRows();
+    const productByName = Object.fromEntries(rows.map(row => [row.name, row]));
     const products = rows.map(row => ({
       id: row.id,
       name: row.name,
       price: moneyNumber(row.sale_price),
+      cost: moneyNumber(row.avg_cost),
       category: isFuelProduct(row) ? FUEL_CATEGORY : row.category,
       unit: row.unit
     }));
     const { data: unpaid, error } = await db.from("debts").select("*").in("status", ["unpaid", "partial"]).order("debt_at", { ascending: true });
     if (error) throw error;
     const debtors = [...new Set((unpaid || []).map(row => row.customer_name))].sort();
-    return {
-      products,
-      debtors,
-      unpaid: (unpaid || []).map(row => ({
+    const unpaidItems = (unpaid || []).map(row => {
+      const metrics = computeDebtItemMetrics(row, productByName);
+      const product = productByName[row.product_name] || {};
+      return {
         rowIndex: row.id,
         date: thaiDate(row.debt_at),
         customer: row.customer_name,
         product: row.product_name,
-        qty: Number(row.qty || 0),
-        amount: Number(row.amount || 0),
+        unit: product.unit || "",
+        qty: metrics.qty,
+        amount: metrics.amount,
+        costTotal: metrics.costTotal,
+        profit: metrics.profit,
         filler: row.filler_name || ""
-      }))
+      };
+    });
+    return {
+      products,
+      debtors,
+      unpaid: unpaidItems,
+      unpaidTotal: unpaidItems.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      unpaidCapital: unpaidItems.reduce((sum, item) => sum + Number(item.costTotal || 0), 0),
+      unpaidProfit: unpaidItems.reduce((sum, item) => sum + Number(item.profit || 0), 0)
     };
   }
 
@@ -740,18 +910,50 @@
       salesQuery = salesQuery.neq("source", "sheet-import");
     }
 
-    const [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes, monthDebtsRes] = await Promise.all([
+    const [
+      salesRes,
+      expensesRes,
+      purchasesRes,
+      debtsRes,
+      unpaidDebtsRes,
+      paymentsRes,
+      paidDebtsRes,
+      fuelLogsRes,
+      testsRes,
+      monthSalesRes,
+      monthDebtsRes,
+      monthPaidDebtsRes,
+      monthFuelLogsRes
+    ] = await Promise.all([
       salesQuery,
       db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
       db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
       db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void"),
       db.from("debts").select("*").in("status", ["unpaid", "partial"]),
       db.from("debt_payments").select("*").gte("paid_at", start).lte("paid_at", end),
+      db.from("debts").select("*").eq("status", "paid").gte("paid_at", start).lte("paid_at", end),
+      db.from("fuel_logs").select("*").gte("logged_at", start).lte("logged_at", end),
       db.from("fuel_tests").select("*").gte("tested_at", start).lte("tested_at", end),
       db.from("sales").select("*").gte("sold_at", profitMonthStartTs).lte("sold_at", profitMonthEndTs).neq("payment_status", "void"),
-      db.from("debts").select("*").gte("debt_at", profitMonthStartTs).lte("debt_at", profitMonthEndTs).neq("status", "void")
+      db.from("debts").select("*").gte("debt_at", profitMonthStartTs).lte("debt_at", profitMonthEndTs).neq("status", "void"),
+      db.from("debts").select("*").eq("status", "paid").gte("paid_at", profitMonthStartTs).lte("paid_at", profitMonthEndTs),
+      db.from("fuel_logs").select("*").gte("logged_at", profitMonthStartTs).lte("logged_at", profitMonthEndTs)
     ]);
-    for (const res of [salesRes, expensesRes, purchasesRes, debtsRes, unpaidDebtsRes, paymentsRes, testsRes, monthSalesRes, monthDebtsRes]) if (res.error) throw res.error;
+    for (const res of [
+      salesRes,
+      expensesRes,
+      purchasesRes,
+      debtsRes,
+      unpaidDebtsRes,
+      paymentsRes,
+      paidDebtsRes,
+      fuelLogsRes,
+      testsRes,
+      monthSalesRes,
+      monthDebtsRes,
+      monthPaidDebtsRes,
+      monthFuelLogsRes
+    ]) if (res.error) throw res.error;
 
     const mergeById = (primary, fallback) => {
       const map = new Map();
@@ -783,13 +985,22 @@
       readCreatedAtFallback("fuel_tests")
     ]);
 
-    const rawSales = mergeById(salesRes.data || [], salesByCreated);
+    const rawSales = restoreShiftSalesWithFuelLogs(
+      mergeById(salesRes.data || [], salesByCreated),
+      fuelLogsRes.data || [],
+      productByName
+    );
     const expenses = mergeById(expensesRes.data || [], expensesByCreated);
     const purchases = mergeById(purchasesRes.data || [], purchasesByCreated);
     const debts = mergeById(debtsRes.data || [], debtsByCreated);
     const salesWithDebtRows = filterOrphanDebtSales(rawSales, debts);
     const sales = salesWithDebtRows.filter(row => !isFuelDebtSale(row, productByName[row.product_name] || null));
-    const monthSales = filterOrphanDebtSales(monthSalesRes.data || [], monthDebtsRes.data || []).filter(row => !isFuelDebtSale(row, productByName[row.product_name] || null));
+    const restoredMonthSales = restoreShiftSalesWithFuelLogs(
+      monthSalesRes.data || [],
+      monthFuelLogsRes.data || [],
+      productByName
+    );
+    const monthSales = filterOrphanDebtSales(restoredMonthSales, monthDebtsRes.data || []).filter(row => !isFuelDebtSale(row, productByName[row.product_name] || null));
     const unpaidDebts = unpaidDebtsRes.data || [];
     const payments = mergeById(paymentsRes.data || [], paymentsByCreated).filter(row => row.note !== "import paid debt");
     const tests = mergeById(testsRes.data || [], testsByCreated);
@@ -845,29 +1056,40 @@
       type: "stock",
       day: bkkDate(row.purchased_at)
     }));
-    const periodDebtList = debts.map(row => ({
+    const periodDebtList = debts.map(row => {
+      const metrics = computeDebtItemMetrics(row, productByName);
+      return {
+        id: row.id,
         customer: row.customer_name,
         item: row.product_name,
-        qty: Number(row.qty || 0),
+        qty: metrics.qty,
         unit: (productByName[row.product_name] || {}).unit || "",
-        amount: Number(row.amount || 0),
+        amount: metrics.amount,
+        costTotal: metrics.costTotal,
+        profit: metrics.profit,
+        status: row.status || "unpaid",
+        date: thaiDate(row.debt_at),
         day: bkkDate(row.debt_at),
         createdAt: row.created_at || null
-      }));
-    const debtList = unpaidDebts.map(row => ({
-      customer: row.customer_name,
-      item: row.product_name,
-      qty: Number(row.qty || 0),
-      unit: (productByName[row.product_name] || {}).unit || "",
-      amount: Number(row.amount || 0),
-      createdAt: row.created_at || null
-    }));
-    const repayList = payments.map(row => ({
-      customer: row.customer_name,
-      debtDate: thaiDate(row.paid_at),
-      day: bkkDate(row.paid_at),
-      amount: Number(row.amount || 0)
-    }));
+      };
+    });
+    const debtList = unpaidDebts.map(row => {
+      const metrics = computeDebtItemMetrics(row, productByName);
+      return {
+        id: row.id,
+        customer: row.customer_name,
+        item: row.product_name,
+        qty: metrics.qty,
+        unit: (productByName[row.product_name] || {}).unit || "",
+        amount: metrics.amount,
+        costTotal: metrics.costTotal,
+        profit: metrics.profit,
+        date: thaiDate(row.debt_at),
+        createdAt: row.created_at || null
+      };
+    });
+    const repayList = buildRepaymentItems(paidDebtsRes.data || [], payments, productByName);
+    const monthRepayList = buildRepaymentItems(monthPaidDebtsRes.data || [], [], productByName);
     const fuelTests = tests.map(row => ({
       type: row.product_name,
       time: thaiTime(row.tested_at),
@@ -897,9 +1119,29 @@
     const walletDeposit = walletList.filter(row => row.type === "deposit").reduce((sum, row) => sum + row.amount, 0);
     const walletUsed = walletList.filter(row => row.type === "use").reduce((sum, row) => sum + row.amount, 0);
     const walletAdjust = walletList.filter(row => row.type === "adjust").reduce((sum, row) => sum + row.amount, 0);
-    const liveProfit = salesList.reduce((sum, row) => sum + row.profit, 0);
-    const monthlyProfit = saleProfitFromRows(monthSales);
-    const liveCapitalReturned = salesList.reduce((sum, row) => sum + row.costTotal, 0);
+
+    const grossSalesCapital = roundMoney2(salesList.reduce((sum, row) => sum + row.costTotal, 0));
+    const grossSalesProfit = roundMoney2(salesList.reduce((sum, row) => sum + row.profit, 0));
+    const debtCapitalHeld = roundMoney2(periodDebtList.reduce((sum, row) => sum + row.costTotal, 0));
+    const debtProfitHeld = roundMoney2(periodDebtList.reduce((sum, row) => sum + row.profit, 0));
+    const debtCapitalRepaid = roundMoney2(repayList.reduce((sum, row) => sum + row.costTotal, 0));
+    const debtProfitRepaid = roundMoney2(repayList.reduce((sum, row) => sum + row.profit, 0));
+
+    const unpaidDebtTotal = roundMoney2(debtList.reduce((sum, row) => sum + row.amount, 0));
+    const unpaidDebtCapital = roundMoney2(debtList.reduce((sum, row) => sum + row.costTotal, 0));
+    const unpaidDebtProfit = roundMoney2(debtList.reduce((sum, row) => sum + row.profit, 0));
+
+    const liveCapitalReturned = roundMoney2(grossSalesCapital - debtCapitalHeld + debtCapitalRepaid);
+    const liveProfit = roundMoney2(grossSalesProfit - debtProfitHeld + debtProfitRepaid);
+
+    const grossMonthProfit = saleProfitFromRows(monthSales);
+    const monthDebtProfitHeld = (monthDebtsRes.data || []).reduce(
+      (sum, row) => sum + computeDebtItemMetrics(row, productByName).profit,
+      0
+    );
+    const monthDebtProfitRepaid = monthRepayList.reduce((sum, row) => sum + row.profit, 0);
+    const monthlyProfit = roundMoney2(grossMonthProfit - monthDebtProfitHeld + monthDebtProfitRepaid);
+
     const livePurchasePaid = purchaseList.reduce((sum, row) => sum + row.amount, 0);
     const liveStockPaid = livePurchasePaid + expenseList.filter(row => row.type === "stock").reduce((sum, row) => sum + row.amount, 0);
     const liveGeneralExpenses = expenseList.filter(row => row.type !== "stock").reduce((sum, row) => sum + row.amount, 0);
@@ -962,7 +1204,7 @@
       chartDays.push(day);
       if (chartDays.length > 370) break;
     }
-    const emptyChartDay = () => ({ total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, repaid: 0 });
+    const emptyChartDay = () => ({ total: 0, capital: 0, profit: 0, stockPaid: 0, walletUsed: 0, debt: 0, repaid: 0, expenses: 0 });
     const chartByDay = Object.fromEntries(chartDays.map(day => [day, emptyChartDay()]));
     salesList.forEach(row => {
       const day = row.day || bkkDate();
@@ -981,10 +1223,17 @@
       if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].stockPaid += Number(row.amount || 0);
     });
+    expenseList.filter(row => row.type !== "stock").forEach(row => {
+      const day = row.day || bkkDate();
+      if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
+      chartByDay[day].expenses += Number(row.amount || 0);
+    });
     periodDebtList.forEach(row => {
       const day = row.day || bkkDate();
       if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].debt += Number(row.amount || 0);
+      chartByDay[day].capital -= Number(row.costTotal || 0);
+      chartByDay[day].profit -= Number(row.profit || 0);
     });
     walletList.filter(row => row.type === "use").forEach(row => {
       const day = row.day || bkkDate();
@@ -995,7 +1244,22 @@
       const day = row.day || bkkDate();
       if (!chartByDay[day]) chartByDay[day] = emptyChartDay();
       chartByDay[day].repaid += Number(row.amount || 0);
+      chartByDay[day].capital += Number(row.costTotal || 0);
+      chartByDay[day].profit += Number(row.profit || 0);
     });
+    const profitDays = chartDays
+      .map(day => {
+        const d = chartByDay[day];
+        return {
+          date: day,
+          label: thaiDate(day),
+          sales: d.total - d.debt + d.repaid,
+          cost: d.capital,
+          expenses: d.expenses,
+          profit: d.profit - d.expenses
+        };
+      })
+      .filter(d => Math.abs(d.sales) > 0.01 || Math.abs(d.expenses) > 0.01 || Math.abs(d.profit) > 0.01);
     return {
       summary: {
         sales: totalSales,
@@ -1014,6 +1278,15 @@
         walletAdjust,
         walletBalance: walletDeposit + walletAdjust - walletUsed,
         capitalReturned,
+        grossSalesCapital,
+        grossSalesProfit,
+        debtCapitalHeld,
+        debtProfitHeld,
+        debtCapitalRepaid,
+        debtProfitRepaid,
+        unpaidDebtTotal,
+        unpaidDebtCapital,
+        unpaidDebtProfit,
         capitalManualIn,
         capitalManualOut,
         capitalNet: capitalReturned - stockPaid,
@@ -1038,6 +1311,7 @@
         expenses: expenseList,
         capital: capitalItems,
         debts: periodDebtList,
+        unpaidDebts: debtList,
         repayments: repayList,
         wallet: walletList,
         fuelTests
@@ -1067,7 +1341,7 @@
         }
       },
       monthlyOilSummary: {
-        profitDays: [],
+        profitDays,
         repayments: repayList,
         debts: periodDebtList,
         payments: monthlyPayments,
@@ -1362,15 +1636,15 @@
 
     const start = `${fromDate}T00:00:00+07:00`;
     const end = `${toDate}T23:59:59+07:00`;
-    const [salesRes, expensesRes, purchasesRes, ledgerRes] = await Promise.all([
-      db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void"),
-      db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end),
-      db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end),
+    const [salesRows, fuelLogsRows, debtsRows, paidDebtsRows, expensesRows, purchasesRows, ledgerRes] = await Promise.all([
+      fetchAllRows(() => db.from("sales").select("*").gte("sold_at", start).lte("sold_at", end).neq("payment_status", "void").order("sold_at", { ascending: true })),
+      fetchAllRows(() => db.from("fuel_logs").select("*").gte("logged_at", start).lte("logged_at", end).order("logged_at", { ascending: true })),
+      fetchAllRows(() => db.from("debts").select("*").gte("debt_at", start).lte("debt_at", end).neq("status", "void").order("debt_at", { ascending: true })),
+      fetchAllRows(() => db.from("debts").select("*").eq("status", "paid").gte("paid_at", start).lte("paid_at", end).order("paid_at", { ascending: true })),
+      fetchAllRows(() => db.from("expenses").select("*").gte("spent_at", start).lte("spent_at", end).order("spent_at", { ascending: true })),
+      fetchAllRows(() => db.from("purchases").select("*").gte("purchased_at", start).lte("purchased_at", end).order("purchased_at", { ascending: true })),
       db.from("money_ledger").select("*").eq("ledger_type", "capital").in("source", ["manual-deposit", "manual-withdraw"]).gte("entry_date", fromDate).lte("entry_date", toDate)
     ]);
-    if (salesRes.error) throw salesRes.error;
-    if (expensesRes.error) throw expensesRes.error;
-    if (purchasesRes.error) throw purchasesRes.error;
     if (ledgerRes.error) throw ledgerRes.error;
 
     const shouldApplyDelta = (day, ledgerDate, cutoff, createdAt) => {
@@ -1381,7 +1655,10 @@
       return new Date(createdAt).getTime() > new Date(cutoff).getTime() + 1000;
     };
 
-    (salesRes.data || []).forEach(row => {
+    const restoredSales = restoreShiftSalesWithFuelLogs(salesRows || [], fuelLogsRows || [], productByName);
+    const validSales = filterOrphanDebtSales(restoredSales, debtsRows || []);
+
+    validSales.forEach(row => {
       const day = bkkDate(row.sold_at);
       const product = productByName[row.product_name] || {};
       if (isFuelDebtSale(row, product)) return;
@@ -1393,7 +1670,31 @@
       if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) result.profit += total - costTotal;
     });
 
-    (expensesRes.data || []).forEach(row => {
+    (debtsRows || []).forEach(row => {
+      const day = bkkDate(row.debt_at);
+      const metrics = computeDebtItemMetrics(row, productByName);
+      if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) {
+        result.capitalReturned -= metrics.costTotal;
+      }
+      if (shouldApplyDelta(day, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.created_at)) {
+        result.profit -= metrics.profit;
+      }
+    });
+
+    (paidDebtsRows || []).forEach(row => {
+      if (!row || !row.paid_at || String(row.status || "") !== "paid") return;
+      const paidDay = bkkDate(row.paid_at);
+      if (paidDay < LIVE_CUTOVER_DATE) return;
+      const metrics = computeDebtItemMetrics(row, productByName);
+      if (shouldApplyDelta(paidDay, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.paid_at)) {
+        result.capitalReturned += metrics.costTotal;
+      }
+      if (shouldApplyDelta(paidDay, ledgerBalances.profitDate, ledgerBalances.profitCreatedAt, row.paid_at)) {
+        result.profit += metrics.profit;
+      }
+    });
+
+    (expensesRows || []).forEach(row => {
       const day = bkkDate(row.spent_at);
       const amount = Number(row.amount || 0);
       if (row.expense_type === "capital") {
@@ -1403,7 +1704,7 @@
       }
     });
 
-    (purchasesRes.data || []).forEach(row => {
+    (purchasesRows || []).forEach(row => {
       const day = bkkDate(row.purchased_at);
       const amount = Number(row.total || Number(row.unit_cost || 0) * Number(row.qty || 0) || 0);
       if (shouldApplyDelta(day, ledgerBalances.capitalDate, ledgerBalances.capitalCreatedAt, row.created_at)) result.stockPaid += amount;
@@ -1688,9 +1989,12 @@
       return Promise.all(filterOrphanDebtSales(rows, dayDebts || []).filter(row => !isFuelDebtSale(row)).map(async row => {
         const isFuelSale = fuelKeys.has(row.product_id) || fuelKeys.has(row.product_name) || FUEL_NAMES.includes(row.product_name);
         const log = isFuelSale ? await findFuelLogForSale(db, row) : null;
+        const isShiftWithFullMeter = String(row.source || "") === "appsmith-fuel-shift" && log && Number(log.qty || 0) > Number(row.qty || 0) + 0.0001;
+        const displayQty = isShiftWithFullMeter ? Number(log.qty || 0) : Number(row.qty || 0);
+        const displayTotal = isShiftWithFullMeter ? roundMoney2(Number(row.unit_price || 0) * displayQty) : row.total;
         return {
           rowIndex: row.id,
-          data: [thaiDate(row.sold_at), row.product_name, row.unit_price, row.qty, row.unit, row.total, row.note || ""],
+          data: [thaiDate(row.sold_at), row.product_name, row.unit_price, displayQty, row.unit, displayTotal, row.note || ""],
           extra: log ? {
             fuelLogId: log.id,
             start: Number(log.meter_start || 0),
