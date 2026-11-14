@@ -1030,6 +1030,7 @@
         day: bkkDate(row.sold_at),
         qty,
         unit: row.unit,
+        unitPrice: Number(row.unit_price || 0),
         category: product.category || "",
         isFuel: isFuelProduct(product) || FUEL_NAMES.includes(row.product_name),
         total,

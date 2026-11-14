@@ -2588,11 +2588,28 @@
                 if (salesList.length === 0 && !hasCashBasisAdjust) {
                     salesBody.innerHTML = '<div class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">ยังไม่มีรายการ</div>';
                 } else {
+                    const priceSetByItem = new Map();
+                    salesList.forEach(item => {
+                        const baseKey = `${String(item.name || '-')}__${String(item.unit || 'หน่วย')}`;
+                        const priceKey = Number(item.unitPrice || 0) > 0
+                            ? Number(item.unitPrice).toFixed(2)
+                            : ((Number(item.qty) || 0) > 0 ? ((Number(item.total) || 0) / Number(item.qty)).toFixed(2) : '0.00');
+                        if (!priceSetByItem.has(baseKey)) priceSetByItem.set(baseKey, new Set());
+                        priceSetByItem.get(baseKey).add(priceKey);
+                    });
+
+                    const isSingleDayView = currentDashMode === 'day'
+                        || (currentDashMode === 'range' && currentDateRange && currentDateRange.from && currentDateRange.from === currentDateRange.to);
                     const groupedSalesList = Array.from(salesList.reduce((map, item) => {
                         const name = String(item.name || '-');
                         const unit = String(item.unit || 'หน่วย');
-                        const key = `${name}__${unit}`;
-                        const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0 };
+                        const baseKey = `${name}__${unit}`;
+                        const hasMultiplePrices = isSingleDayView && (priceSetByItem.get(baseKey)?.size || 0) > 1;
+                        const unitPrice = Number(item.unitPrice || 0) > 0
+                            ? Number(item.unitPrice)
+                            : ((Number(item.qty) || 0) > 0 ? (Number(item.total) || 0) / Number(item.qty) : 0);
+                        const key = hasMultiplePrices ? `${baseKey}__${unitPrice.toFixed(2)}` : baseKey;
+                        const old = map.get(key) || { name, unit, qty: 0, total: 0, profit: 0, costTotal: 0, unitPrice: hasMultiplePrices ? unitPrice : 0, showUnitPrice: hasMultiplePrices };
                         old.qty += Number(item.qty) || 0;
                         old.total += Number(item.total) || 0;
                         old.profit += Number(item.profit) || 0;
@@ -2606,10 +2623,13 @@
                         const profit = Number(item.profit) || 0;
                         const profitPerUnit = qty > 0 ? profit / qty : 0;
                         const profitClass = profit < 0 ? 'text-red-600' : 'text-emerald-600';
+                        const priceBadge = item.showUnitPrice && item.unitPrice > 0
+                            ? ` <span class="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">@${item.unitPrice.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+                            : '';
                         return `<div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition">
                             <div class="flex justify-between items-start gap-3">
                                 <div class="flex-1 min-w-0 pr-2">
-                                    <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.name)}</div>
+                                    <div class="text-sm font-bold text-slate-700 truncate">${escapeHtml(item.name)}${priceBadge}</div>
                                     <div class="text-xs text-slate-400">x${qty.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${escapeHtml(item.unit || 'หน่วย')}</div>
                                     <div class="text-xs ${profitClass} font-bold mt-1">กำไร/หน่วย ${profitPerUnit.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</div>
                                 </div>
