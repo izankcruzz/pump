@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-11-05-debt-cash-basis-v96";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-11-15-debt-bill-select-v97";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -850,12 +850,104 @@
 
   async function receiveDebtPayment(form) {
     const db = await ensureReady();
-    const { error } = await db.rpc("app_receive_debt_payment", {
-      p_customer_name: form.customerName,
-      p_amount: Number(form.amount || 0),
-      p_note: form.note || null
+    const customerName = String((form && form.customerName) || "").trim();
+    const payAmount = roundMoney2(Number((form && form.amount) || 0));
+    const rawNote = String((form && form.note) || "").trim();
+    const selectedIds = Array.isArray(form && form.debtIds)
+      ? form.debtIds.map(id => String(id || "").trim()).filter(Boolean)
+      : [];
+
+    if (!customerName) throw new Error("กรุณาระบุชื่อลูกค้า");
+    if (payAmount <= 0) throw new Error("กรุณาระบุยอดรับชำระที่มากกว่า 0");
+
+    if (selectedIds.length === 0) {
+      const { error } = await db.rpc("app_receive_debt_payment", {
+        p_customer_name: customerName,
+        p_amount: payAmount,
+        p_note: rawNote || null
+      });
+      if (error) throw error;
+      return "รับชำระแล้ว";
+    }
+
+    const { data: targetRows, error: fetchError } = await db
+      .from("debts")
+      .select("*")
+      .eq("customer_name", customerName)
+      .in("status", ["unpaid", "partial"])
+      .in("id", selectedIds)
+      .order("debt_at", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (fetchError) throw fetchError;
+
+    const debtsToPay = targetRows || [];
+    if (debtsToPay.length === 0) {
+      throw new Error("ไม่พบบิลค้างชำระที่เลือก");
+    }
+
+    const selectedTotal = roundMoney2(debtsToPay.reduce((sum, r) => sum + Number(r.amount || 0), 0));
+    if (payAmount - selectedTotal > 0.01) {
+      throw new Error("ยอดชำระเกินยอดรวมของบิลที่เลือก");
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: paymentInsertError } = await db.from("debt_payments").insert({
+      customer_name: customerName,
+      amount: payAmount,
+      paid_at: nowIso,
+      note: rawNote || null
     });
-    if (error) throw error;
+    if (paymentInsertError) throw paymentInsertError;
+
+    let remaining = payAmount;
+    for (const debt of debtsToPay) {
+      if (remaining <= 0.001) break;
+      const origAmount = roundMoney2(Number(debt.amount || 0));
+      const origQty = Number(debt.qty || 0);
+
+      if (remaining >= origAmount - 0.005) {
+        const { error: updErr } = await db
+          .from("debts")
+          .update({ status: "paid", paid_at: nowIso })
+          .eq("id", debt.id);
+        if (updErr) throw updErr;
+        remaining = roundMoney2(remaining - origAmount);
+      } else {
+        const paidAmt = roundMoney2(remaining);
+        const ratio = origAmount > 0 ? paidAmt / origAmount : 0;
+        const paidQty = Math.round(origQty * ratio * 1000) / 1000;
+        const remainAmt = roundMoney2(origAmount - paidAmt);
+        const remainQty = Math.max(0, Math.round((origQty - paidQty) * 1000) / 1000);
+
+        const { error: updPartialErr } = await db
+          .from("debts")
+          .update({
+            amount: remainAmt,
+            qty: remainQty,
+            status: "partial"
+          })
+          .eq("id", debt.id);
+        if (updPartialErr) throw updPartialErr;
+
+        const { error: insPaidErr } = await db
+          .from("debts")
+          .insert({
+            debt_at: debt.debt_at,
+            customer_name: debt.customer_name,
+            product_id: debt.product_id,
+            product_name: debt.product_name,
+            qty: paidQty,
+            amount: paidAmt,
+            filler_name: debt.filler_name,
+            status: "paid",
+            paid_at: nowIso,
+            note: `partial payment${rawNote ? `: ${rawNote}` : ""}`
+          });
+        if (insPaidErr) throw insPaidErr;
+        remaining = 0;
+      }
+    }
+
     return "รับชำระแล้ว";
   }
 

@@ -12,7 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./supabase-adapter.js?v=20261105-debt-cash-basis-v96"></script>
+    <script src="./supabase-adapter.js?v=20261115-debt-bill-select-v97"></script>
 
     
     <meta name="theme-color" content="#4f46e5">
@@ -793,28 +793,45 @@
 
             <div id="debt-payment-modal"
                 class="hidden fixed inset-0 z-[92] flex items-center justify-center modal-overlay p-4">
-                <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl scale-up-center relative">
+                <div class="bg-white rounded-3xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl scale-up-center relative">
                     <button onclick="closeDebtPaymentModal()"
                         class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i
                             class="fa-solid fa-times text-xl"></i></button>
-                    <h3 class="text-lg font-bold text-emerald-700 mb-5 flex items-center gap-2"><i
+                    <h3 class="text-lg font-bold text-emerald-700 mb-4 flex items-center gap-2"><i
                             class="fa-solid fa-hand-holding-dollar"></i> รับชำระหนี้</h3>
 
-                    <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-5">
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-4">
                         <div class="text-xs text-emerald-600 font-bold">ลูกค้า</div>
                         <div id="payment-customer-name" class="text-xl font-black text-slate-800">-</div>
-                        <div class="flex justify-between mt-3 text-sm">
-                            <span class="text-slate-500">ยอดค้างทั้งหมด</span>
-                            <span id="payment-total" class="font-black text-red-500">0 บาท</span>
+                        <div class="flex justify-between mt-2 text-xs text-slate-500">
+                            <span>ยอดค้างทั้งหมดของลูกค้า</span>
+                            <span id="payment-total" class="font-bold text-slate-700">0 บาท</span>
                         </div>
+                        <div class="flex justify-between mt-1 text-sm pt-1.5 border-t border-emerald-100/80">
+                            <span class="text-emerald-800 font-bold">ยอดรวมบิลที่เลือกชำระ</span>
+                            <span id="payment-selected-total" class="font-black text-red-500">0 บาท</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-xs font-bold text-slate-500">เลือกบิลที่ต้องการชำระ (<span id="payment-selected-count" class="text-emerald-600">0/0</span>)</label>
+                            <div class="flex gap-1.5">
+                                <button type="button" onclick="toggleAllDebtPaymentItems(true)"
+                                    class="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg hover:bg-indigo-100">เลือกทั้งหมด</button>
+                                <button type="button" onclick="toggleAllDebtPaymentItems(false)"
+                                    class="text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg hover:bg-slate-200">ล้างที่เลือก</button>
+                            </div>
+                        </div>
+                        <div id="debt-payment-items-list" class="max-h-44 overflow-y-auto border border-slate-200 rounded-2xl p-2 space-y-1 bg-slate-50/60"></div>
                     </div>
 
                     <div class="space-y-4">
                         <div>
                             <div class="flex justify-between items-center">
-                                <label class="text-xs font-bold text-slate-400 ml-1 uppercase">ยอดที่รับชำระ</label>
+                                <label class="text-xs font-bold text-slate-400 ml-1 uppercase">ยอดที่รับชำระจริง</label>
                                 <button onclick="fillDebtPaymentFull()"
-                                    class="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100">เต็มจำนวน</button>
+                                    class="text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100">เต็มตามบิลที่เลือก</button>
                             </div>
                             <input type="number" id="debt-payment-amount" oninput="updateDebtPaymentPreview()"
                                 class="w-full p-4 mt-1 border border-emerald-200 rounded-2xl text-right font-black text-3xl text-emerald-600 bg-emerald-50/40 outline-none focus:ring-4 focus:ring-emerald-50 focus:border-emerald-400"
@@ -830,7 +847,7 @@
                     </div>
 
                     <button onclick="submitDebtPayment()" id="btn-debt-payment-save"
-                        class="w-full mt-6 bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-emerald-100 active:scale-95 transition-transform flex items-center justify-center gap-2"><i
+                        class="w-full mt-5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-3.5 rounded-2xl font-bold shadow-lg shadow-emerald-100 active:scale-95 transition-transform flex items-center justify-center gap-2"><i
                             class="fa-solid fa-check"></i> บันทึกรับชำระ</button>
                 </div>
             </div>
@@ -3833,13 +3850,17 @@
                         const itemCostLine = showDebtCostBreakdown
                             ? `<div class="text-[10px] text-amber-700">ทุน ฿${cap} | กำไร ฿${prof}</div>`
                             : '';
+                        const itemIdAttr = escapeHtml(String(i.rowIndex || ''));
                         return `
-                        <div class="flex justify-between items-start gap-2">
+                        <div onclick="openDebtPaymentModal(${groupIndex}, '${itemIdAttr}')" title="คลิกเพื่อเลือกชำระเฉพาะบิลนี้" class="flex justify-between items-start gap-2 cursor-pointer hover:bg-emerald-50/70 rounded-lg px-1.5 py-1 -mx-1.5 transition group">
                             <div>
                                 <span>${escapeHtml(i.product)}${qtyText} <span class="text-slate-300">(${escapeHtml(i.date)})</span></span>
                                 ${itemCostLine}
                             </div>
-                            <span class="font-bold text-slate-700 shrink-0">฿${Number(i.amount || 0).toLocaleString('th-TH')}</span>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <span class="hidden group-hover:inline-block text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-semibold">ชำระบิลนี้</span>
+                                <span class="font-bold text-slate-700">฿${Number(i.amount || 0).toLocaleString('th-TH')}</span>
+                            </div>
                         </div>`;
                     }).join('')}
                 </div>
@@ -3848,22 +3869,87 @@
             div.innerHTML = h;
         }
 
+        let selectedDebtPaymentIds = new Set();
+
+        function getSelectedDebtPaymentItems() {
+            if (!currentDebtPayment || !Array.isArray(currentDebtPayment.items)) return [];
+            return currentDebtPayment.items.filter(item => selectedDebtPaymentIds.has(String(item.rowIndex)));
+        }
+
+        function getSelectedDebtPaymentTotal() {
+            return getSelectedDebtPaymentItems().reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        }
+
+        function renderDebtPaymentItemsList() {
+            const listEl = document.getElementById('debt-payment-items-list');
+            const countEl = document.getElementById('payment-selected-count');
+            const selTotalEl = document.getElementById('payment-selected-total');
+            if (!listEl || !currentDebtPayment) return;
+            const items = Array.isArray(currentDebtPayment.items) ? currentDebtPayment.items : [];
+            const selectedTotal = getSelectedDebtPaymentTotal();
+            if (countEl) countEl.innerText = `${selectedDebtPaymentIds.size}/${items.length} บิล`;
+            if (selTotalEl) selTotalEl.innerText = `${selectedTotal.toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`;
+
+            listEl.innerHTML = items.map((item, idx) => {
+                const id = String(item.rowIndex || idx);
+                const checked = selectedDebtPaymentIds.has(id);
+                const qtyNum = Number(item.qty) || 0;
+                const unitStr = item.unit ? escapeHtml(item.unit) : '';
+                const qtyText = qtyNum > 0
+                    ? ` x${qtyNum.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}${unitStr ? ' ' + unitStr : ''}`
+                    : '';
+                return `<label class="flex items-center justify-between gap-2 p-2 rounded-xl border ${checked ? 'bg-emerald-50/80 border-emerald-200' : 'bg-white border-slate-100 opacity-65'} cursor-pointer hover:border-emerald-300 transition text-xs select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleDebtPaymentItem('${escapeHtml(id)}', this.checked)" class="w-4 h-4 accent-emerald-600 rounded cursor-pointer shrink-0">
+                        <div class="truncate">
+                            <span class="font-bold text-slate-700">${escapeHtml(item.product)}</span>
+                            <span class="text-slate-500">${qtyText}</span>
+                            <span class="text-slate-400">(${escapeHtml(item.date)})</span>
+                        </div>
+                    </div>
+                    <span class="font-bold ${checked ? 'text-emerald-700' : 'text-slate-500'} shrink-0">฿${Number(item.amount || 0).toLocaleString('th-TH')}</span>
+                </label>`;
+            }).join('');
+        }
+
+        function toggleDebtPaymentItem(id, isChecked) {
+            const key = String(id);
+            if (isChecked) selectedDebtPaymentIds.add(key);
+            else selectedDebtPaymentIds.delete(key);
+            renderDebtPaymentItemsList();
+            const selectedTotal = getSelectedDebtPaymentTotal();
+            document.getElementById('debt-payment-amount').value = selectedTotal > 0 ? selectedTotal.toFixed(2) : '';
+            updateDebtPaymentPreview();
+        }
+
+        function toggleAllDebtPaymentItems(selectAll) {
+            if (!currentDebtPayment) return;
+            selectedDebtPaymentIds = new Set();
+            if (selectAll && Array.isArray(currentDebtPayment.items)) {
+                currentDebtPayment.items.forEach(item => selectedDebtPaymentIds.add(String(item.rowIndex)));
+            }
+            renderDebtPaymentItemsList();
+            const selectedTotal = getSelectedDebtPaymentTotal();
+            document.getElementById('debt-payment-amount').value = selectedTotal > 0 ? selectedTotal.toFixed(2) : '';
+            updateDebtPaymentPreview();
+        }
+
         function updateDebtPaymentPreview() {
             const box = document.getElementById('debt-payment-breakdown');
             if (!box || !currentDebtPayment) return;
             const payInput = parseFloat(document.getElementById('debt-payment-amount').value) || 0;
-            const totalDebt = Number(currentDebtPayment.total) || 0;
-            const effectivePay = Math.max(0, Math.min(payInput, totalDebt));
+            const totalCustomerDebt = Number(currentDebtPayment.total) || 0;
+            const selectedItems = getSelectedDebtPaymentItems();
+            const selectedTotal = selectedItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            const effectivePay = Math.max(0, Math.min(payInput, selectedTotal));
             let remainingToAllocate = effectivePay;
             let capitalRecovered = 0;
             let profitRealized = 0;
-            const items = Array.isArray(currentDebtPayment.items) ? currentDebtPayment.items : [];
-            for (const item of items) {
+            for (const item of selectedItems) {
                 if (remainingToAllocate <= 0.0001) break;
                 const itemAmt = Number(item.amount) || 0;
                 if (itemAmt <= 0.0001) continue;
                 const itemCap = Number.isFinite(Number(item.costTotal)) ? Number(item.costTotal) : itemAmt;
-                const itemProf = Number.isFinite(Number(item.profit)) ? Number(item.profit) : (itemAmt - itemCap);
                 const paidPortion = Math.min(remainingToAllocate, itemAmt);
                 const ratio = paidPortion / itemAmt;
                 const capPart = Math.round(itemCap * ratio * 100) / 100;
@@ -3872,10 +3958,10 @@
                 profitRealized += profPart;
                 remainingToAllocate -= paidPortion;
             }
-            const remainingDebt = Math.max(0, totalDebt - effectivePay);
+            const remainingCustomerDebt = Math.max(0, totalCustomerDebt - effectivePay);
             const fmt2 = v => (Number(v) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             box.innerHTML = `
-                <div class="font-bold text-slate-700 mb-1">เมื่อบันทึกรับชำระยอดนี้ ระบบจะคำนวณเข้าบัญชีวันนี้:</div>
+                <div class="font-bold text-slate-700 mb-1">สรุปยอดที่จะเข้าบัญชีวันนี้ (${selectedItems.length} บิลที่เลือก):</div>
                 <div class="flex justify-between text-cyan-700">
                     <span>• คืนเข้าเงินทุนวันนี้ (ซื้อของล็อตใหม่ได้)</span>
                     <span class="font-black">+${fmt2(capitalRecovered)} บาท</span>
@@ -3885,18 +3971,26 @@
                     <span class="font-black">+${fmt2(profitRealized)} บาท</span>
                 </div>
                 <div class="flex justify-between text-slate-500 pt-1 border-t border-slate-200">
-                    <span>ยอดค้างคงเหลือหลังชำระ</span>
-                    <span class="font-bold ${remainingDebt > 0.009 ? 'text-orange-600' : 'text-slate-700'}">${fmt2(remainingDebt)} บาท</span>
+                    <span>ยอดค้างรวมของลูกค้าหลังชำระครั้งนี้</span>
+                    <span class="font-bold ${remainingCustomerDebt > 0.009 ? 'text-orange-600' : 'text-slate-700'}">${fmt2(remainingCustomerDebt)} บาท</span>
                 </div>
             `;
         }
 
-        function openDebtPaymentModal(groupIndex) {
+        function openDebtPaymentModal(groupIndex, onlyItemId = null) {
             currentDebtPayment = debtPaymentGroups[groupIndex];
             if (!currentDebtPayment) return;
+            const items = Array.isArray(currentDebtPayment.items) ? currentDebtPayment.items : [];
+            if (onlyItemId) {
+                selectedDebtPaymentIds = new Set([String(onlyItemId)]);
+            } else {
+                selectedDebtPaymentIds = new Set(items.map(item => String(item.rowIndex)));
+            }
             document.getElementById('payment-customer-name').innerText = currentDebtPayment.customer;
             document.getElementById('payment-total').innerText = `${currentDebtPayment.total.toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`;
-            document.getElementById('debt-payment-amount').value = currentDebtPayment.total.toFixed(2);
+            renderDebtPaymentItemsList();
+            const selectedTotal = getSelectedDebtPaymentTotal();
+            document.getElementById('debt-payment-amount').value = selectedTotal.toFixed(2);
             document.getElementById('debt-payment-note').value = '';
             updateDebtPaymentPreview();
             document.getElementById('debt-payment-modal').classList.remove('hidden');
@@ -3906,21 +4000,34 @@
         function closeDebtPaymentModal() {
             document.getElementById('debt-payment-modal').classList.add('hidden');
             currentDebtPayment = null;
+            selectedDebtPaymentIds = new Set();
         }
 
         function fillDebtPaymentFull() {
             if (!currentDebtPayment) return;
-            document.getElementById('debt-payment-amount').value = currentDebtPayment.total.toFixed(2);
+            if (selectedDebtPaymentIds.size === 0 && Array.isArray(currentDebtPayment.items)) {
+                currentDebtPayment.items.forEach(item => selectedDebtPaymentIds.add(String(item.rowIndex)));
+                renderDebtPaymentItemsList();
+            }
+            const selectedTotal = getSelectedDebtPaymentTotal();
+            document.getElementById('debt-payment-amount').value = selectedTotal.toFixed(2);
             updateDebtPaymentPreview();
         }
 
         function submitDebtPayment() {
             if (!currentDebtPayment) return;
+            const selectedItems = getSelectedDebtPaymentItems();
+            if (selectedItems.length === 0) return alert("กรุณาเลือกบิลที่ต้องการรับชำระอย่างน้อย 1 บิล");
+            const selectedTotal = getSelectedDebtPaymentTotal();
             const amount = parseFloat(document.getElementById('debt-payment-amount').value);
             const note = document.getElementById('debt-payment-note').value;
             if (!amount || amount <= 0) return alert("กรุณากรอกยอดชำระให้ถูกต้อง");
-            if (amount - currentDebtPayment.total > 0.0001) return alert("ยอดชำระเกินยอดค้าง");
-            if (!confirm(`ยืนยันรับชำระหนี้ ${currentDebtPayment.customer} จำนวน ${amount.toLocaleString('th-TH')} บาท?`)) return;
+            if (amount - selectedTotal > 0.01) return alert(`ยอดชำระเกินยอดรวมของบิลที่เลือก (${selectedTotal.toLocaleString('th-TH')} บาท)`);
+            const totalItemsCount = (currentDebtPayment.items || []).length;
+            const billLabel = selectedItems.length === totalItemsCount
+                ? `ทั้งหมด ${totalItemsCount} บิล`
+                : `${selectedItems.length} บิลที่เลือก`;
+            if (!confirm(`ยืนยันรับชำระหนี้ ${currentDebtPayment.customer} (${billLabel}) จำนวน ${amount.toLocaleString('th-TH')} บาท?`)) return;
 
             const btn = document.getElementById('btn-debt-payment-save');
             const originalText = btn.innerHTML;
@@ -3941,7 +4048,12 @@
                     btn.innerHTML = originalText;
                     btn.disabled = false;
                 })
-                .receiveDebtPayment({ customerName: currentDebtPayment.customer, amount: amount, note: note });
+                .receiveDebtPayment({
+                    customerName: currentDebtPayment.customer,
+                    amount: amount,
+                    note: note,
+                    debtIds: selectedItems.map(item => item.rowIndex)
+                });
         }
 
         function submitDebt() {
