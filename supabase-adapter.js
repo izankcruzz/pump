@@ -1,5 +1,5 @@
 (function () {
-  window.POS_SUPABASE_ADAPTER_VERSION = "2026-11-15-debt-bill-select-v97";
+  window.POS_SUPABASE_ADAPTER_VERSION = "2026-11-18-debt-date-v98";
   console.info("POS Supabase adapter", window.POS_SUPABASE_ADAPTER_VERSION);
 
   const STORAGE_URL = "POS_SUPABASE_URL";
@@ -818,16 +818,102 @@
     const rows = await productRows();
     const product = rows.find(row => row.name === form.productName);
     if (!product) throw new Error(`ไม่พบสินค้า: ${form.productName}`);
-    const { error } = await db.rpc("app_create_debt", {
-      p_customer_name: form.customerName,
-      p_product_id: product.id,
-      p_qty: form.qty ? Number(form.qty) : null,
-      p_amount: form.totalPrice ? Number(form.totalPrice) : null,
-      p_filler_name: form.fillerName || null,
-      p_note: null
+    const customerName = String((form && form.customerName) || "").trim();
+    const fillerName = String((form && form.fillerName) || "").trim();
+    const debtDate = String((form && form.debtDate) || "").trim().slice(0, 10);
+    const today = bkkDate();
+
+    if (!debtDate || debtDate === today) {
+      const { error } = await db.rpc("app_create_debt", {
+        p_customer_name: customerName,
+        p_product_id: product.id,
+        p_qty: form.qty ? Number(form.qty) : null,
+        p_amount: form.totalPrice ? Number(form.totalPrice) : null,
+        p_filler_name: fillerName || null,
+        p_note: null
+      });
+      if (error) throw error;
+      return "บันทึกหนี้แล้ว";
+    }
+
+    const targetIso = `${debtDate}T12:00:00+07:00`;
+    let salePrice = Number(product.sale_price || 0);
+    if (isFuelProduct(product)) {
+      const { data: dayLogs } = await db
+        .from("fuel_logs")
+        .select("unit_price,note")
+        .eq("product_id", product.id)
+        .gte("logged_at", `${debtDate}T00:00:00+07:00`)
+        .lte("logged_at", `${debtDate}T23:59:59+07:00`)
+        .order("logged_at", { ascending: false });
+      const validLog = (dayLogs || []).find(l => Number(l.unit_price) > 0 && String(l.note || "").toLowerCase() !== "fuel test");
+      if (validLog) {
+        salePrice = Number(validLog.unit_price);
+      } else {
+        const { data: phBefore } = await db
+          .from("price_history")
+          .select("new_price")
+          .eq("product_id", product.id)
+          .lte("changed_at", `${debtDate}T23:59:59+07:00`)
+          .order("changed_at", { ascending: false })
+          .limit(1);
+        if (phBefore && phBefore[0] && Number(phBefore[0].new_price) > 0) {
+          salePrice = Number(phBefore[0].new_price);
+        }
+      }
+    }
+
+    const rawAmount = Number(form.totalPrice || 0);
+    const rawQty = Number(form.qty || 0);
+    const qty = rawQty > 0
+      ? Math.round(rawQty * 1000) / 1000
+      : (salePrice > 0 ? Math.round((rawAmount / salePrice) * 1000) / 1000 : 0);
+    const amount = rawAmount > 0
+      ? roundMoney2(rawAmount)
+      : roundMoney2(qty * salePrice);
+    if (!customerName) throw new Error("กรุณาระบุชื่อลูกค้า");
+    if (qty <= 0 || amount <= 0) throw new Error("กรุณาระบุยอดเงินให้ถูกต้อง");
+
+    const unitCost = resolveUnitCostAt(product.id, product.name, targetIso, { [product.name]: product });
+    const saleNote = `debt: ${customerName}${fillerName ? ` (${fillerName})` : ""}`;
+
+    const { error: saleErr } = await db.from("sales").insert({
+      sold_at: targetIso,
+      product_id: product.id,
+      product_name: product.name,
+      unit_price: salePrice,
+      qty,
+      unit: product.unit || (isFuelProduct(product) ? "ลิตร" : "ชิ้น"),
+      unit_cost_at_sale: unitCost,
+      note: saleNote,
+      payment_status: "debt",
+      source: "appsmith-debt"
     });
-    if (error) throw error;
-    return "บันทึกหนี้แล้ว";
+    if (saleErr) throw saleErr;
+
+    const { error: debtErr } = await db.from("debts").insert({
+      debt_at: targetIso,
+      customer_name: customerName,
+      product_id: product.id,
+      product_name: product.name,
+      qty,
+      amount,
+      filler_name: fillerName || null,
+      status: "unpaid",
+      note: null
+    });
+    if (debtErr) throw debtErr;
+
+    if (!isFuelProduct(product)) {
+      const nextStock = Math.max(0, Number(product.stock_qty || 0) - qty);
+      const { error: stockErr } = await db
+        .from("products")
+        .update({ stock_qty: nextStock })
+        .eq("id", product.id);
+      if (stockErr) throw stockErr;
+    }
+
+    return `บันทึกหนี้วันที่ ${thaiDate(debtDate)} แล้ว`;
   }
 
   async function clearDebtByCustomer(customerName) {
