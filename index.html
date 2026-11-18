@@ -746,19 +746,9 @@
                             <h3 class="text-lg font-bold text-orange-600 mb-6 flex items-center gap-2"><i
                                     class="fa-solid fa-user-plus"></i> เพิ่มรายการค้างใหม่</h3>
                             <div class="space-y-5">
-                                <div>
-                                    <div class="flex justify-between items-center">
-                                        <label class="text-xs font-bold text-slate-400 ml-1">วันที่ค้างชำระ</label>
-                                        <div class="flex gap-1.5">
-                                            <button type="button" onclick="setDebtFormDateOffset(0)"
-                                                class="text-[11px] font-bold text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-lg hover:bg-orange-100 transition">วันนี้</button>
-                                            <button type="button" onclick="setDebtFormDateOffset(-1)"
-                                                class="text-[11px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg hover:bg-slate-200 transition">เมื่อวาน</button>
-                                        </div>
-                                    </div>
-                                    <input type="date" id="debt-date"
-                                        class="w-full p-3 mt-1 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 font-bold text-slate-700 bg-slate-50 focus:bg-white transition-all">
-                                </div>
+                                <div><label class="text-xs font-bold text-slate-400 ml-1">วันที่ค้างชำระ</label><input
+                                        type="date" id="debt-date"
+                                        class="w-full p-3.5 mt-1 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 font-bold text-slate-700 bg-slate-50 focus:bg-white transition-all"></div>
                                 <div><label class="text-xs font-bold text-slate-400 ml-1">ชื่อลูกค้า</label><input
                                         list="debtor-list" id="debt-customer"
                                         class="w-full p-3.5 mt-1 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 font-bold text-lg bg-slate-50 focus:bg-white transition-all"
@@ -3789,17 +3779,9 @@
         }
 
         // --- DEBT ---
-        function setDebtFormDateOffset(daysOffset = 0) {
-            const el = document.getElementById('debt-date');
-            if (!el) return;
-            const d = new Date();
-            d.setDate(d.getDate() + Number(daysOffset || 0));
-            el.value = getLocalIsoDate(d);
-        }
-
         function loadDebtData() {
             const debtDateEl = document.getElementById('debt-date');
-            if (debtDateEl && !debtDateEl.value) {
+            if (debtDateEl) {
                 debtDateEl.value = getLocalIsoDate(new Date());
             }
             document.getElementById('unpaid-list').innerHTML = '<div class="text-center text-slate-400 py-10 flex flex-col items-center"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-indigo-200"></i><span>กำลังโหลด...</span></div>';
