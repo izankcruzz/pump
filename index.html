@@ -776,11 +776,16 @@
                             </div>
                         </div>
                         <div
-                            class="bg-white border border-slate-100 rounded-3xl p-6 shadow-soft h-full lg:order-1 flex flex-col">
-                            <div class="flex justify-between items-center mb-4 border-b border-slate-50 pb-3">
+                            class="bg-white border border-slate-100 rounded-3xl p-6 shadow-soft lg:order-1 flex flex-col">
+                            <div class="flex flex-wrap justify-between items-center gap-2 mb-4 border-b border-slate-50 pb-3">
                                 <h3 class="font-bold text-slate-600"><i
                                         class="fa-solid fa-list-check mr-2 text-indigo-500"></i>รายการค้างชำระ</h3>
-                                <div class="flex items-center gap-2">
+                                <div class="flex items-center flex-wrap gap-1.5">
+                                    <button id="btn-toggle-debt-cols" onclick="toggleDebtCompactGrid()"
+                                        title="สลับแสดงผล 1 คอลัมน์ / 2 คอลัมน์ (เพื่อให้เห็นหลายรายการในหน้าจอเดียวสำหรับแคปจอ)"
+                                        class="text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-xl hover:bg-slate-200 font-bold transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-table-columns"></i> <span class="hidden sm:inline">2 คอลัมน์</span>
+                                    </button>
                                     <button id="btn-toggle-debt-cost" onclick="toggleDebtCostBreakdown()"
                                         title="เปิด/ปิด การแสดงทุนและกำไร (ปิดไว้เป็นค่าเริ่มต้นเพื่อแคปหน้าจอส่งลูกค้า)"
                                         class="text-xs bg-slate-100 text-slate-500 px-3 py-2 rounded-xl hover:bg-slate-200 font-bold transition flex items-center gap-1.5">
@@ -794,7 +799,7 @@
                                             class="fa-solid fa-rotate"></i></button>
                                 </div>
                             </div>
-                            <div id="unpaid-list" class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                            <div id="unpaid-list" class="space-y-3">
                                 <div class="text-center text-slate-400 py-10 flex flex-col items-center"><i
                                         class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-indigo-200"></i><span>กำลังโหลด...</span>
                                 </div>
@@ -3781,6 +3786,52 @@
             }).getDebtPageData();
         }
         let showDebtCostBreakdown = false;
+        let useDebtCompactTwoCols = false;
+
+        function toggleDebtCompactGrid() {
+            useDebtCompactTwoCols = !useDebtCompactTwoCols;
+            const btn = document.getElementById('btn-toggle-debt-cols');
+            if (btn) {
+                if (useDebtCompactTwoCols) {
+                    btn.className = "text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-xl hover:bg-indigo-200 font-bold transition flex items-center gap-1.5";
+                    btn.innerHTML = '<i class="fa-solid fa-list"></i> <span class="hidden sm:inline">1 คอลัมน์</span>';
+                } else {
+                    btn.className = "text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-xl hover:bg-slate-200 font-bold transition flex items-center gap-1.5";
+                    btn.innerHTML = '<i class="fa-solid fa-table-columns"></i> <span class="hidden sm:inline">2 คอลัมน์</span>';
+                }
+            }
+            renderUnpaidDebts(unpaidDebts || []);
+        }
+
+        function copyCustomerDebtSummary(groupIndex) {
+            const group = debtPaymentGroups[groupIndex];
+            if (!group) return;
+            const lines = [
+                `📋 สรุปรายการค้างชำระ: ${group.customer}`,
+                `จำนวน ${group.items.length} รายการ | รวมทั้งสิ้น ${Number(group.total || 0).toLocaleString('th-TH')} บาท`,
+                `------------------------`
+            ];
+            group.items.forEach((item, idx) => {
+                const qtyNum = Number(item.qty) || 0;
+                const unitStr = item.unit ? ` ${item.unit}` : '';
+                const qtyText = qtyNum > 0
+                    ? ` x${qtyNum.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}${unitStr}`
+                    : '';
+                lines.push(`${idx + 1}. ${item.product}${qtyText} (${item.date}) = ${Number(item.amount || 0).toLocaleString('th-TH')} บาท`);
+            });
+            lines.push(`------------------------`);
+            lines.push(`ยอดรวมทั้งหมด: ${Number(group.total || 0).toLocaleString('th-TH')} บาท`);
+            const text = lines.join('\n');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showSuccess(`คัดลอกรายการของ ${group.customer} (${group.items.length} รายการ) แล้ว`);
+                }).catch(() => {
+                    prompt("คัดลอกข้อความด้านล่าง:", text);
+                });
+            } else {
+                prompt("คัดลอกข้อความด้านล่าง:", text);
+            }
+        }
 
         function toggleDebtCostBreakdown() {
             showDebtCostBreakdown = !showDebtCostBreakdown;
@@ -3863,6 +3914,9 @@
                 const customerCostLine = showDebtCostBreakdown
                     ? `<div class="text-[11px] text-amber-700 font-semibold mt-0.5">ทุนจม ฿${Math.round(da.capital).toLocaleString('th-TH')} | กำไรรอเก็บ ฿${Math.round(da.profit).toLocaleString('th-TH')}</div>`
                     : '';
+                const itemsGridClass = useDebtCompactTwoCols
+                    ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500'
+                    : 'text-xs text-slate-500 space-y-1';
                 h += `<div class="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm mb-3">
                 <div class="flex justify-between items-start border-b border-slate-50 pb-2 mb-2">
                     <div>
@@ -3872,10 +3926,13 @@
                     </div>
                     <div class="text-right">
                         <div class="text-red-500 font-bold text-lg">฿${da.total.toLocaleString('th-TH')}</div>
-                        <button onclick="openDebtPaymentModal(${groupIndex})" class="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100 mt-1 transition font-bold"><i class="fa-solid fa-hand-holding-dollar mr-1"></i> รับชำระ</button>
+                        <div class="flex items-center justify-end gap-1.5 mt-1">
+                            <button onclick="copyCustomerDebtSummary(${groupIndex})" title="คัดลอกรายการทั้งหมดส่งไลน์" class="text-[10px] bg-slate-50 text-slate-600 border border-slate-200 px-2 py-1 rounded-lg hover:bg-slate-100 transition font-bold"><i class="fa-regular fa-copy mr-1"></i> คัดลอก</button>
+                            <button onclick="openDebtPaymentModal(${groupIndex})" class="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-100 transition font-bold"><i class="fa-solid fa-hand-holding-dollar mr-1"></i> รับชำระ</button>
+                        </div>
                     </div>
                 </div>
-                <div class="text-xs text-slate-500 space-y-1.5">
+                <div class="${itemsGridClass}">
                     ${da.items.map(i => {
                         const qtyNum = Number(i.qty) || 0;
                         const unitStr = i.unit ? escapeHtml(i.unit) : '';
